@@ -1,0 +1,28 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <!-- Windows Terminal–inspired palette -->
+  <Color x:Key="TerminalCanvas">#FF0C0C0C</Color>
+  <Color x:Key="TabIdle">#00000000</Color>
+  <Color x:Key="TabHover">#18FFFFFF</Color>
+  <Color x:Key="TabActive">#FF0C0C0C</Color>
+  <Color x:Key="StrokeSoft">#22FFFFFF</Color>
+  <Color x:Key="TextPrimary">#FFF3F3F3</Color>
+  <Color x:Key="TextMuted">#FF9AA0A6</Color>
+  <Color x:Key="Accent">#FF60CDFF</Color>
+  <Color x:Key="Danger">#FFE81123</Color>
+
+  <SolidColorBrush x:Key="BrushTerminalCanvas" Color="{StaticResource TerminalCanvas}" />
+  <SolidColorBrush x:Key="BrushTabHover" Color="{StaticResource TabHover}" />
+  <SolidColorBrush x:Key="BrushTabActive" Color="{StaticResource TabActive}" />
+  <SolidColorBrush x:Key="BrushBorderSoft" Color="{StaticResource StrokeSoft}" />
+  <SolidColorBrush x:Key="BrushBorderSubtle" Color="#33FFFFFF" />
+  <SolidColorBrush x:Key="BrushTextPrimary" Color="{StaticResource TextPrimary}" />
+  <SolidColorBrush x:Key="BrushTextMuted" Color="{StaticResource TextMuted}" />
+  <SolidColorBrush x:Key="BrushAccent" Color="{StaticResource Accent}" />
+  <SolidColorBrush x:Key="BrushDanger" Color="{StaticResource Danger}" />
+  <SolidColorBrush x:Key="BrushScrim" Color="#99000000" />
+  <SolidColorBrush x:Key="BrushFlyout" Color="#E8252525" />
+  <SolidColorBrush x:Key="BrushBgHover" Color="#28FFFFFF" />
+  <SolidColorBrush x:Key="BrushBgActive" Color="#3DFFFFFF" />
+  <SolidColorBrush x:Key="BrushBgPanel" Color="#CC1F1F1F" />
+</ResourceDictionary>

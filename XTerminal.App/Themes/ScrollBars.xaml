@@ -1,0 +1,112 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- Thin, translucent scrollbars that dissolve into dark UI -->
+  <SolidColorBrush x:Key="ScrollTrackBrush" Color="#00000000" />
+  <SolidColorBrush x:Key="ScrollThumbBrush" Color="#44FFFFFF" />
+  <SolidColorBrush x:Key="ScrollThumbHoverBrush" Color="#66FFFFFF" />
+  <SolidColorBrush x:Key="ScrollThumbPressedBrush" Color="#88FFFFFF" />
+
+  <Style TargetType="ScrollBar">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Width" Value="8" />
+    <Setter Property="MinWidth" Value="8" />
+    <Setter Property="Opacity" Value="0.55" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ScrollBar">
+          <Grid x:Name="Root" Background="Transparent">
+            <Border x:Name="TrackBg"
+                    Background="#14FFFFFF"
+                    CornerRadius="4"
+                    Margin="1"
+                    Opacity="0" />
+            <Track x:Name="PART_Track" IsDirectionReversed="True">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0" Height="0" />
+              </Track.DecreaseRepeatButton>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0" Height="0" />
+              </Track.IncreaseRepeatButton>
+              <Track.Thumb>
+                <Thumb>
+                  <Thumb.Template>
+                    <ControlTemplate TargetType="Thumb">
+                      <Border x:Name="ThumbBd"
+                              Background="{StaticResource ScrollThumbBrush}"
+                              CornerRadius="4"
+                              Margin="1,0" />
+                      <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                          <Setter TargetName="ThumbBd" Property="Background" Value="{StaticResource ScrollThumbHoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                          <Setter TargetName="ThumbBd" Property="Background" Value="{StaticResource ScrollThumbPressedBrush}" />
+                        </Trigger>
+                      </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                  </Thumb.Template>
+                </Thumb>
+              </Track.Thumb>
+            </Track>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter TargetName="TrackBg" Property="Opacity" Value="1" />
+              <Setter Property="Opacity" Value="1" />
+            </Trigger>
+            <Trigger Property="Orientation" Value="Horizontal">
+              <Setter Property="Width" Value="Auto" />
+              <Setter Property="Height" Value="8" />
+              <Setter Property="MinHeight" Value="8" />
+              <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="ScrollViewer">
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="ScrollViewer">
+          <Grid Background="{TemplateBinding Background}">
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*" />
+              <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <ScrollContentPresenter Grid.Column="0" Grid.Row="0"
+                                    Margin="{TemplateBinding Padding}"
+                                    Content="{TemplateBinding Content}"
+                                    ContentTemplate="{TemplateBinding ContentTemplate}"
+                                    CanContentScroll="{TemplateBinding CanContentScroll}" />
+
+            <ScrollBar x:Name="PART_VerticalScrollBar"
+                       Grid.Column="1" Grid.Row="0"
+                       Orientation="Vertical"
+                       ViewportSize="{TemplateBinding ViewportHeight}"
+                       Maximum="{TemplateBinding ScrollableHeight}"
+                       Value="{TemplateBinding VerticalOffset}"
+                       Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}" />
+
+            <ScrollBar x:Name="PART_HorizontalScrollBar"
+                       Grid.Column="0" Grid.Row="1"
+                       Orientation="Horizontal"
+                       ViewportSize="{TemplateBinding ViewportWidth}"
+                       Maximum="{TemplateBinding ScrollableWidth}"
+                       Value="{TemplateBinding HorizontalOffset}"
+                       Visibility="{TemplateBinding ComputedHorizontalScrollBarVisibility}" />
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+</ResourceDictionary>

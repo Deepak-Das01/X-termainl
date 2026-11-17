@@ -1,0 +1,98 @@
+<UserControl x:Class="XTerminal.App.Views.HistoryView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:XTerminal.App.Converters"
+             Background="{DynamicResource BrushAppBackground}"
+             PreviewKeyDown="View_OnPreviewKeyDown">
+  <UserControl.Resources>
+    <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisInvert" Invert="True" />
+  </UserControl.Resources>
+
+  <Grid Margin="10,8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <DockPanel Grid.Row="0" Height="34" Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button Style="{StaticResource CompactBtn}" Content="Copy" Command="{Binding CopyCommand}"
+                CommandParameter="{Binding SelectedEntry}" />
+        <Button Style="{StaticResource CompactBtnPrimary}" Content="Insert" Command="{Binding InsertCommand}"
+                CommandParameter="{Binding SelectedEntry}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Run Again" Command="{Binding RunAgainCommand}"
+                CommandParameter="{Binding SelectedEntry}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Favorite as Snippet" Command="{Binding FavoriteAsSnippetCommand}"
+                CommandParameter="{Binding SelectedEntry}" />
+        <Button Style="{StaticResource CompactBtnDanger}" Content="Clear" Command="{Binding ClearCommand}" />
+      </StackPanel>
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Style="{StaticResource PageTitle}" Text="History" />
+        <TextBlock Style="{StaticResource PageSubtitle}"
+                   Text="Application terminal history · Private Input is not recorded · Exit codes require shell integration (not claimed)" />
+      </StackPanel>
+    </DockPanel>
+
+    <DockPanel Grid.Row="1" Height="32" Margin="0,0,0,6">
+      <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding ShellFilters}" SelectedItem="{Binding ShellFilter}"
+                Width="100" Height="28" Margin="4,0,0,0" />
+      <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding SourceFilters}" SelectedItem="{Binding SourceFilter}"
+                Width="80" Height="28" Margin="4,0,0,0" />
+      <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding RangeFilters}" SelectedItem="{Binding RangeFilter}"
+                Width="90" Height="28" Margin="4,0,0,0" />
+      <Border CornerRadius="6" Padding="8,0" Height="28"
+              Background="{DynamicResource BrushSurfaceElevated}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0"
+                 VerticalContentAlignment="Center" Background="Transparent"
+                 Foreground="{DynamicResource BrushTextPrimary}" CaretBrush="{DynamicResource BrushAccent}" FontSize="12" />
+      </Border>
+    </DockPanel>
+
+    <Border Grid.Row="2" CornerRadius="8" Background="{DynamicResource BrushSurface}"
+            BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1"
+            Visibility="{Binding HasEntries, Converter={StaticResource BoolToVis}}">
+      <DataGrid ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}"
+                Style="{StaticResource DesktopDataGrid}"
+                ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
+                RowStyle="{StaticResource DesktopDataGridRow}"
+                CellStyle="{StaticResource DesktopDataGridCell}"
+                EnableRowVirtualization="True"
+                MouseDoubleClick="Grid_OnMouseDoubleClick"
+                ContextMenuOpening="Grid_OnContextMenuOpening">
+        <DataGrid.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy" Click="CtxCopy_OnClick" />
+            <MenuItem Header="Insert into terminal" Click="CtxInsert_OnClick" />
+            <MenuItem Header="Run again" Click="CtxRun_OnClick" />
+            <MenuItem Header="Create snippet" Click="CtxSnippet_OnClick" />
+            <Separator />
+            <MenuItem Header="Delete" Click="CtxDelete_OnClick" />
+          </ContextMenu>
+        </DataGrid.ContextMenu>
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="Time" Binding="{Binding TimestampUtc, StringFormat=g}" Width="130" />
+          <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="*" MinWidth="160" />
+          <DataGridTextColumn Header="Session" Binding="{Binding SessionName}" Width="120" />
+          <DataGridTextColumn Header="Directory" Binding="{Binding WorkingDirectory}" Width="160" />
+          <DataGridTextColumn Header="Result" Binding="{Binding ExitCodeDisplay}" Width="70" IsReadOnly="True">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="ToolTip" Value="Exit codes are not inferred without shell integration." />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+        </DataGrid.Columns>
+      </DataGrid>
+    </Border>
+
+    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center"
+                Visibility="{Binding HasEntries, Converter={StaticResource BoolToVisInvert}}">
+      <TextBlock Style="{StaticResource EmptyStateTitle}" Text="No command history yet" />
+      <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                 Text="Commands run in X-Terminal will appear here when history is enabled." />
+    </StackPanel>
+  </Grid>
+</UserControl>

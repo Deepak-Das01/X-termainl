@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    html, body, #root { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1e1e1e; }
+    #editor { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="root"><div id="editor"></div></div>
+  <script src="vendor/monaco/vs/loader.js"></script>
+  <script>
+    const vscode = window.chrome && window.chrome.webview;
+    function post(msg) {
+      try { if (vscode) vscode.postMessage(msg); } catch (e) { /* ignore */ }
+    }
+
+    let editor = null;
+    let suppressChange = false;
+    let currentId = null;
+
+    require.config({ paths: { vs: 'vendor/monaco/vs' } });
+    require(['vs/editor/editor.main'], function () {
+      monaco.editor.defineTheme('xterminal-dark', {
+        base: 'vs-dark',
+        inherit: true,
+        rules: [],
+        colors: {
+          'editor.background': '#1e1e1e',
+          'editor.foreground': '#d4d4d4',
+          'editorLineNumber.foreground': '#858585',
+          'editorCursor.foreground': '#60cdff',
+          'editor.selectionBackground': '#264f78',
+          'editor.lineHighlightBackground': '#2a2d2e'
+        }
+      });
+
+      editor = monaco.editor.create(document.getElementById('editor'), {
+        value: '',
+        language: 'plaintext',
+        theme: 'xterminal-dark',
+        automaticLayout: true,
+        fontFamily: 'Cascadia Code, Consolas, monospace',
+        fontSize: 14,
+        lineNumbers: 'on',
+        minimap: { enabled: true },
+        wordWrap: 'off',
+        tabSize: 4,
+        insertSpaces: true,
+        renderWhitespace: 'none',
+        matchBrackets: 'always',
+        multiCursorModifier: 'alt',
+        find: { addExtraSpaceOnTop: false, autoFindInSelection: 'never', seedSearchStringFromSelection: 'always' },
+        scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
+      });
+
+      editor.onDidChangeModelContent(function () {
+        if (suppressChange || !currentId) return;
+        post({ type: 'changed', id: currentId, value: editor.getValue() });
+      });
+
+      editor.onDidChangeCursorPosition(function (e) {
+        if (!currentId) return;
+        post({
+          type: 'cursor',
+          id: currentId,
+          line: e.position.lineNumber,
+          column: e.position.column
+        });
+      });
+
+      window.addEventListener('resize', function () {
+        if (editor) editor.layout();
+      });
+
+      post({ type: 'ready' });
+    });
+
+    function handle(msg) {
+      if (!editor && msg.type !== 'ready') {
+        setTimeout(function () { handle(msg); }, 50);
+        return;
+      }
+      switch (msg.type) {
+        case 'open':
+          currentId = msg.id;
+          suppressChange = true;
+          var model = monaco.editor.createModel(msg.value || '', msg.language || 'plaintext');
+          editor.setModel(model);
+          editor.setScrollTop(0);
+          suppressChange = false;
+          post({
+            type: 'cursor',
+            id: currentId,
+            line: editor.getPosition().lineNumber,
+            column: editor.getPosition().column
+          });
+          break;
+        case 'setValue':
+          if (msg.id !== currentId) break;
+          suppressChange = true;
+          editor.setValue(msg.value || '');
+          suppressChange = false;
+          break;
+        case 'setLanguage':
+          if (msg.id !== currentId) break;
+          monaco.editor.setModelLanguage(editor.getModel(), msg.language || 'plaintext');
+          break;
+        case 'options':
+          editor.updateOptions({
+            fontFamily: msg.fontFamily || 'Cascadia Code, Consolas, monospace',
+            fontSize: msg.fontSize || 14,
+            lineHeight: Math.round((msg.fontSize || 14) * (msg.lineHeight || 1.45)),
+            wordWrap: msg.wordWrap ? 'on' : 'off',
+            minimap: { enabled: !!msg.minimap },
+            tabSize: msg.tabSize || 4,
+            insertSpaces: msg.insertSpaces !== false,
+            renderWhitespace: msg.renderWhitespace ? 'all' : 'none'
+          });
+          break;
+        case 'theme':
+          monaco.editor.setTheme(msg.theme || 'xterminal-dark');
+          break;
+        case 'command':
+          if (msg.id !== currentId) break;
+          runCommand(msg.name, msg.arg);
+          break;
+        case 'focus':
+          editor.focus();
+          break;
+      }
+    }
+
+    function runCommand(name, arg) {
+      switch (name) {
+        case 'find':
+          editor.getAction('actions.find').run();
+          break;
+        case 'replace':
+          editor.getAction('editor.action.startFindReplaceAction').run();
+          break;
+        case 'gotoLine':
+          editor.getAction('editor.action.gotoLine').run();
+          break;
+        case 'toggleWordWrap':
+          var cur = editor.getOption(monaco.editor.EditorOption.wordWrap);
+          editor.updateOptions({ wordWrap: cur === 'on' ? 'off' : 'on' });
+          break;
+        case 'toggleMinimap':
+          var mm = editor.getOption(monaco.editor.EditorOption.minimap).enabled;
+          editor.updateOptions({ minimap: { enabled: !mm } });
+          break;
+        case 'goTo':
+          if (arg && arg.line) {
+            editor.revealLineInCenter(arg.line);
+            editor.setPosition({ lineNumber: arg.line, column: arg.column || 1 });
+            editor.focus();
+          }
+          break;
+      }
+    }
+
+    if (vscode) {
+      vscode.addEventListener('message', function (ev) { handle(ev.data); });
+    }
+  </script>
+</body>
+</html>

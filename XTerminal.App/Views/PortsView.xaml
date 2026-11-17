@@ -1,0 +1,116 @@
+<UserControl x:Class="XTerminal.App.Views.PortsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:XTerminal.App.Converters"
+             Background="{DynamicResource BrushAppBackground}"
+             PreviewKeyDown="View_OnPreviewKeyDown">
+  <UserControl.Resources>
+    <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisInvert" Invert="True" />
+  </UserControl.Resources>
+
+  <Grid Margin="10,8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <DockPanel Grid.Row="0" Height="34" Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button Style="{StaticResource CompactBtnPrimary}" Content="+ New Forward" Command="{Binding NewForwardCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Start" Command="{Binding StartCommand}"
+                CommandParameter="{Binding SelectedForward}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Stop" Command="{Binding StopCommand}"
+                CommandParameter="{Binding SelectedForward}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Restart" Command="{Binding RestartCommand}"
+                CommandParameter="{Binding SelectedForward}" />
+        <Button Style="{StaticResource CompactBtnDanger}" Content="Delete" Command="{Binding DeleteCommand}"
+                CommandParameter="{Binding SelectedForward}" />
+      </StackPanel>
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Style="{StaticResource PageTitle}" Text="Port Forwarding" />
+        <TextBlock Style="{StaticResource PageSubtitle}"
+                   Text="{Binding ActiveCount, StringFormat={}{0} active · }" />
+      </StackPanel>
+    </DockPanel>
+
+    <Border Grid.Row="1" CornerRadius="6" Padding="8,0" Height="28" Margin="0,0,0,6"
+            Background="{DynamicResource BrushSurfaceElevated}"
+            BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+      <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0"
+               VerticalContentAlignment="Center" Background="Transparent"
+               Foreground="{DynamicResource BrushTextPrimary}" CaretBrush="{DynamicResource BrushAccent}"
+               FontSize="12" />
+    </Border>
+
+    <Border Grid.Row="2" CornerRadius="8" Background="{DynamicResource BrushSurface}"
+            BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1"
+            Visibility="{Binding HasForwards, Converter={StaticResource BoolToVis}}">
+      <DataGrid ItemsSource="{Binding Forwards}" SelectedItem="{Binding SelectedForward}"
+                Style="{StaticResource DesktopDataGrid}"
+                ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
+                RowStyle="{StaticResource DesktopDataGridRow}"
+                CellStyle="{StaticResource DesktopDataGridCell}"
+                EnableRowVirtualization="True"
+                MouseDoubleClick="Grid_OnMouseDoubleClick"
+                ContextMenuOpening="Grid_OnContextMenuOpening">
+        <DataGrid.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Start" Click="CtxStart_OnClick" />
+            <MenuItem Header="Stop" Click="CtxStop_OnClick" />
+            <MenuItem Header="Restart" Click="CtxRestart_OnClick" />
+            <MenuItem Header="Edit" Click="CtxEdit_OnClick" />
+            <MenuItem Header="Open SSH Session" Click="CtxSession_OnClick" />
+            <Separator />
+            <MenuItem Header="Delete" Click="CtxDelete_OnClick" />
+          </ContextMenu>
+        </DataGrid.ContextMenu>
+        <DataGrid.Columns>
+          <DataGridTextColumn Header="State" Binding="{Binding StateLabel}" Width="100" />
+          <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" MinWidth="100" />
+          <DataGridTextColumn Header="Type" Binding="{Binding TypeLabel}" Width="70" />
+          <DataGridTextColumn Header="Bind" Binding="{Binding BindAddress}" Width="100" />
+          <DataGridTextColumn Header="Local Port" Binding="{Binding ListenPort}" Width="80" />
+          <DataGridTextColumn Header="Remote Host" Binding="{Binding RemoteHost}" Width="110" />
+          <DataGridTextColumn Header="Remote Port" Binding="{Binding RemotePort}" Width="80" />
+          <DataGridTextColumn Header="SSH Session" Binding="{Binding SessionName}" Width="120" />
+          <DataGridTextColumn Header="Error" Binding="{Binding ErrorMessage}" Width="140" />
+          <DataGridTextColumn Header="Conn" Binding="{Binding Connections}" Width="48" />
+          <DataGridTextColumn Header="↑ Sent" Binding="{Binding SentDisplay}" Width="70"
+                              IsReadOnly="True">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="ToolTip" Value="SSH.NET does not expose per-forward byte counters." />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+          <DataGridTextColumn Header="↓ Recv" Binding="{Binding ReceivedDisplay}" Width="70"
+                              IsReadOnly="True">
+            <DataGridTextColumn.ElementStyle>
+              <Style TargetType="TextBlock">
+                <Setter Property="ToolTip" Value="SSH.NET does not expose per-forward byte counters." />
+              </Style>
+            </DataGridTextColumn.ElementStyle>
+          </DataGridTextColumn>
+        </DataGrid.Columns>
+      </DataGrid>
+    </Border>
+
+    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center"
+                Visibility="{Binding HasForwards, Converter={StaticResource BoolToVisInvert}}">
+      <TextBlock Style="{StaticResource EmptyStateTitle}" Text="No port forwards configured" />
+      <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                 Text="Create SSH tunnels for local, remote, or SOCKS (dynamic) forwarding." />
+      <Button Style="{StaticResource CompactBtnPrimary}" Content="New Port Forward"
+              Command="{Binding NewForwardCommand}" HorizontalAlignment="Center" Height="30" Padding="14,0" />
+    </StackPanel>
+
+    <Border Grid.Row="3" Margin="0,6,0,0" Padding="8,5" CornerRadius="6"
+            Background="#33E81123" BorderBrush="#88E81123" BorderThickness="1"
+            Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+      <TextBlock Text="{Binding ErrorBanner}" Foreground="#FFEF9A9A" FontSize="11" TextWrapping="Wrap" />
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,59 @@
+## Build
+bin/
+obj/
+[Bb]uild/
+[Dd]ebug/
+[Rr]elease/
+*_phase*_out/
+*_phase*_obj/
+artifacts/
+TestResults/
+publish/
+*.exe
+*.dll
+*.pdb
+*.cache
+!**/Assets/**/*.dll
+
+## IDE / VS
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.idea/
+*.DotSettings.user
+
+## Logs & local app data
+*.log
+AppData/
+logs/
+**/WebView2/
+**/EBWebView/
+**/User Data/
+
+## Secrets / credentials (never commit)
+.env
+.env.*
+*.pfx
+*.pem
+*.key
+*.ppk
+credentials.json
+**/known_hosts
+**/ssh-sessions*.local.json
+secrets/
+
+## OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+## Node / fetch tooling
+node_modules/
+tools/monaco-fetch/node_modules/
+
+## Temporary
+*.tmp
+*.temp
+~$*

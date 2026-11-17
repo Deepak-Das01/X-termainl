@@ -1,0 +1,16 @@
+<UserControl x:Class="XTerminal.App.Controls.TerminalWorkspaceHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:XTerminal.App.Controls"
+             xmlns:vm="clr-namespace:XTerminal.App.ViewModels"
+             Background="{DynamicResource BrushTerminalCanvas}">
+  <Grid>
+    <Border x:Name="BroadcastBanner" Height="22" VerticalAlignment="Top" Panel.ZIndex="10"
+            Background="#44D29922" BorderBrush="#88D29922" BorderThickness="0,0,0,1"
+            Visibility="Collapsed">
+      <TextBlock x:Name="BroadcastText" Text="Broadcast Input" FontSize="11" FontWeight="SemiBold"
+                 Foreground="#FFFFE08A" VerticalAlignment="Center" Margin="10,0" />
+    </Border>
+    <ContentControl x:Name="RootHost" Margin="0,0,0,0" />
+  </Grid>
+</UserControl>

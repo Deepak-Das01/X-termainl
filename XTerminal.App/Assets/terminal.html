@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="vendor/xterm.min.css" />
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0c0c0c;
+      position: relative;
+    }
+
+    /* Padding keeps first/last glyph lines from clipping under chrome */
+    #terminal {
+      box-sizing: border-box;
+      width: 100%;
+      height: 100%;
+      padding: 10px 12px 10px 14px;
+      overflow: hidden;
+      background: #0c0c0c;
+    }
+
+    #findBar {
+      display: none;
+      position: absolute;
+      top: 8px;
+      right: 12px;
+      z-index: 20;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 6px;
+      padding: 4px 6px;
+      gap: 4px;
+      align-items: center;
+      font-family: Segoe UI, sans-serif;
+      font-size: 12px;
+      color: #ddd;
+    }
+    #findBar.visible { display: flex; }
+    #findBar input {
+      width: 160px;
+      background: #1e1e1e;
+      border: 1px solid #555;
+      color: #eee;
+      border-radius: 4px;
+      padding: 3px 6px;
+    }
+    #findBar button {
+      background: #3a3a3a;
+      border: 1px solid #555;
+      color: #eee;
+      border-radius: 4px;
+      padding: 2px 6px;
+      cursor: pointer;
+    }
+    #findCount { min-width: 48px; color: #aaa; text-align: center; }
+
+    .xterm {
+      height: 100%;
+      padding: 0;
+    }
+    .xterm-viewport, .xterm-screen { height: 100%; }
+    .xterm:focus, .xterm-screen:focus { outline: none; }
+
+    .xterm-viewport {
+      scrollbar-width: thin;
+      scrollbar-color: rgba(255,255,255,0.22) transparent;
+    }
+    .xterm-viewport::-webkit-scrollbar { width: 8px; height: 8px; }
+    .xterm-viewport::-webkit-scrollbar-track { background: transparent; }
+    .xterm-viewport::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.18);
+      border-radius: 8px;
+      border: 2px solid transparent;
+      background-clip: content-box;
+    }
+    .xterm-viewport::-webkit-scrollbar-thumb:hover {
+      background: rgba(255,255,255,0.35);
+      background-clip: content-box;
+    }
+    .xterm-viewport::-webkit-scrollbar-corner { background: transparent; }
+  </style>
+</head>
+<body>
+  <div id="findBar">
+    <input id="findInput" type="text" placeholder="Find" />
+    <span id="findCount">0 / 0</span>
+    <button id="findPrev" type="button" title="Previous">↑</button>
+    <button id="findNext" type="button" title="Next">↓</button>
+    <label style="display:flex;align-items:center;gap:3px;margin-left:4px;">
+      <input id="findCase" type="checkbox" /> Aa
+    </label>
+    <button id="findClose" type="button">✕</button>
+  </div>
+  <div id="terminal"></div>
+  <script src="vendor/xterm.min.js"></script>
+  <script src="vendor/addon-fit.min.js"></script>
+  <script src="vendor/addon-web-links.min.js"></script>
+  <script>
+    const term = new Terminal({
+      cursorBlink: true,
+      cursorStyle: 'bar',
+      fontFamily: '"Cascadia Mono", "Cascadia Code", Consolas, monospace',
+      fontSize: 13,
+      lineHeight: 1.35,
+      letterSpacing: 0,
+      scrollback: 5000,
+      allowProposedApi: true,
+      theme: {
+        background: '#0c0c0c',
+        foreground: '#cccccc',
+        cursor: '#ffffff',
+        cursorAccent: '#0c0c0c',
+        selectionBackground: '#ffffff40',
+        black: '#0c0c0c', red: '#c50f1f', green: '#13a10e', yellow: '#c19c00',
+        blue: '#0037da', magenta: '#881798', cyan: '#3a96dd', white: '#cccccc',
+        brightBlack: '#767676', brightRed: '#e74856', brightGreen: '#16c60c',
+        brightYellow: '#f9f1a5', brightBlue: '#3b78ff', brightMagenta: '#b4009e',
+        brightCyan: '#61d6d6', brightWhite: '#f2f2f2'
+      }
+    });
+
+    const fitAddon = new FitAddon.FitAddon();
+    term.loadAddon(fitAddon);
+    term.loadAddon(new WebLinksAddon.WebLinksAddon());
+    term.open(document.getElementById('terminal'));
+    fitAddon.fit();
+    term.focus();
+
+    function post(type, payload) {
+      try {
+        if (window.chrome && window.chrome.webview) {
+          window.chrome.webview.postMessage(Object.assign({ type: type }, payload || {}));
+        }
+      } catch (e) { /* ignore */ }
+    }
+
+    function refit() {
+      try {
+        fitAddon.fit();
+        post('resize', { cols: term.cols, rows: term.rows });
+      } catch (e) { /* ignore */ }
+    }
+
+    term.onData(function (data) { post('input', { data: data }); });
+    term.onResize(function (size) { post('resize', { cols: size.cols, rows: size.rows }); });
+
+    term.attachCustomKeyEventHandler(function (ev) {
+      if (ev.ctrlKey && (ev.key === 't' || ev.key === 'T' || ev.key === ',' || ev.key === 'p' || ev.key === 'P' || ev.key === 'f' || ev.key === 'F')) {
+        return false;
+      }
+      if (ev.key === 'Escape' && document.getElementById('findBar').classList.contains('visible')) {
+        closeFind();
+        return false;
+      }
+      return true;
+    });
+
+    document.body.addEventListener('mousedown', function () { term.focus(); });
+    window.addEventListener('resize', function () { refit(); });
+    window.addEventListener('focus', function () { term.focus(); });
+
+    if (window.ResizeObserver) {
+      new ResizeObserver(function () { refit(); }).observe(document.getElementById('terminal'));
+    }
+
+    function applyAppearance(msg) {
+      if (!msg) return;
+      if (msg.fontFamily) term.options.fontFamily = '"' + msg.fontFamily + '", Consolas, monospace';
+      if (msg.fontSize) term.options.fontSize = msg.fontSize;
+      if (msg.lineHeight) term.options.lineHeight = msg.lineHeight;
+      if (typeof msg.letterSpacing === 'number') term.options.letterSpacing = msg.letterSpacing;
+      if (typeof msg.cursorBlink === 'boolean') term.options.cursorBlink = msg.cursorBlink;
+      if (msg.cursorStyle) term.options.cursorStyle = msg.cursorStyle;
+      if (msg.scheme) {
+        term.options.theme = Object.assign({}, term.options.theme, msg.scheme);
+        document.documentElement.style.background = msg.scheme.background || '#0c0c0c';
+        document.body.style.background = msg.scheme.background || '#0c0c0c';
+        document.getElementById('terminal').style.background = msg.scheme.background || '#0c0c0c';
+      }
+      if (typeof msg.padding === 'number') {
+        document.getElementById('terminal').style.padding = msg.padding + 'px';
+      }
+      refit();
+    }
+
+    let findMatches = [];
+    let findIndex = -1;
+
+    function collectMatches(query, caseSensitive) {
+      findMatches = [];
+      if (!query) return;
+      const buf = term.buffer.active;
+      for (let y = 0; y < buf.length; y++) {
+        const line = buf.getLine(y);
+        if (!line) continue;
+        const text = line.translateToString(true);
+        const hay = caseSensitive ? text : text.toLowerCase();
+        const needle = caseSensitive ? query : query.toLowerCase();
+        let from = 0;
+        while (true) {
+          const idx = hay.indexOf(needle, from);
+          if (idx < 0) break;
+          findMatches.push({ y: y, x: idx, len: query.length });
+          from = idx + Math.max(needle.length, 1);
+        }
+      }
+    }
+
+    function jumpToMatch(i) {
+      if (!findMatches.length) {
+        document.getElementById('findCount').textContent = '0 / 0';
+        return;
+      }
+      findIndex = ((i % findMatches.length) + findMatches.length) % findMatches.length;
+      const m = findMatches[findIndex];
+      term.scrollToLine(m.y);
+      term.select(m.x, m.y, m.len);
+      document.getElementById('findCount').textContent = (findIndex + 1) + ' / ' + findMatches.length;
+    }
+
+    function openFind() {
+      const bar = document.getElementById('findBar');
+      bar.classList.add('visible');
+      const input = document.getElementById('findInput');
+      input.focus();
+      input.select();
+    }
+
+    function closeFind() {
+      document.getElementById('findBar').classList.remove('visible');
+      term.clearSelection();
+      term.focus();
+    }
+
+    function runFind(dir) {
+      const q = document.getElementById('findInput').value;
+      const cs = document.getElementById('findCase').checked;
+      collectMatches(q, cs);
+      if (!findMatches.length) {
+        document.getElementById('findCount').textContent = '0 / 0';
+        return;
+      }
+      if (findIndex < 0) jumpToMatch(0);
+      else jumpToMatch(findIndex + (dir || 1));
+    }
+
+    document.getElementById('findNext').onclick = function () { runFind(1); };
+    document.getElementById('findPrev').onclick = function () { runFind(-1); };
+    document.getElementById('findClose').onclick = closeFind;
+    document.getElementById('findInput').addEventListener('keydown', function (ev) {
+      if (ev.key === 'Enter') { runFind(ev.shiftKey ? -1 : 1); ev.preventDefault(); }
+      if (ev.key === 'Escape') { closeFind(); ev.preventDefault(); }
+    });
+    document.getElementById('findInput').addEventListener('input', function () {
+      findIndex = -1;
+      runFind(1);
+    });
+
+    function handleHostMessage(msg) {
+      if (!msg || !msg.type) return;
+      if (msg.type === 'output') term.write(msg.data || '');
+      else if (msg.type === 'clear') { term.reset(); }
+      else if (msg.type === 'fit') { refit(); }
+      else if (msg.type === 'focus') { term.focus(); }
+      else if (msg.type === 'appearance') { applyAppearance(msg); }
+      else if (msg.type === 'find') { openFind(); }
+      else if (msg.type === 'zoom' && msg.fontSize) {
+        term.options.fontSize = msg.fontSize;
+        refit();
+      }
+      else if (msg.type === 'selectAll') {
+        term.selectAll();
+      }
+      else if (msg.type === 'copy') {
+        var sel = term.getSelection();
+        if (sel) post('clipboardCopy', { text: sel });
+      }
+      else if (msg.type === 'paste' && typeof msg.text === 'string') {
+        term.paste(msg.text);
+      }
+    }
+
+    if (window.chrome && window.chrome.webview) {
+      window.chrome.webview.addEventListener('message', function (event) {
+        handleHostMessage(event.data);
+      });
+    }
+
+    setTimeout(function () {
+      refit();
+      post('ready', {});
+      term.focus();
+    }, 40);
+  </script>
+</body>
+</html>

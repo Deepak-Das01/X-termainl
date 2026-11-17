@@ -1,0 +1,491 @@
+<UserControl x:Class="XTerminal.App.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:XTerminal.App.Converters"
+             Background="{DynamicResource BrushAppBackground}">
+  <UserControl.Resources>
+    <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    <conv:SettingsCategoryVisibilityConverter x:Key="CategoryVis" />
+    <conv:StringToBrushConverter x:Key="StringToBrush" />
+    <Style x:Key="CatButton" TargetType="Button">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="10,6" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Cursor" Value="Hand" />
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Button">
+            <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="{TemplateBinding Padding}">
+              <ContentPresenter />
+            </Border>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushHover}" />
+              </Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+    <Style x:Key="ChipButton" TargetType="Button" BasedOn="{StaticResource CompactBtn}">
+      <Setter Property="Padding" Value="10,0" />
+      <Setter Property="Margin" Value="0,0,6,0" />
+      <Setter Property="Height" Value="28" />
+    </Style>
+  </UserControl.Resources>
+
+  <Grid>
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="180" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <!-- Categories -->
+    <Border Grid.Column="0" Background="{DynamicResource BrushSurface}"
+            BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="0,0,1,0">
+      <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Style="{StaticResource PageTitle}" Text="Settings"
+                   Margin="12,12,12,8" />
+        <ListBox ItemsSource="{Binding SettingsCategories}"
+                 SelectedItem="{Binding SettingsCategory, Mode=TwoWay}"
+                 Margin="6,0,6,12" BorderThickness="0" Background="Transparent"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+          <ListBox.ItemContainerStyle>
+            <Style TargetType="ListBoxItem">
+              <Setter Property="Padding" Value="0" />
+              <Setter Property="Margin" Value="0,1" />
+              <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+              <Setter Property="Template">
+                <Setter.Value>
+                  <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" CornerRadius="6" Padding="10,6" Background="Transparent">
+                      <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                      <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushHover}" />
+                      </Trigger>
+                      <Trigger Property="IsSelected" Value="True">
+                        <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BrushActive}" />
+                      </Trigger>
+                      <Trigger Property="IsKeyboardFocused" Value="True">
+                        <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                        <Setter TargetName="Bd" Property="BorderThickness" Value="1" />
+                      </Trigger>
+                    </ControlTemplate.Triggers>
+                  </ControlTemplate>
+                </Setter.Value>
+              </Setter>
+            </Style>
+          </ListBox.ItemContainerStyle>
+          <ListBox.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding}" FontSize="12" Foreground="{DynamicResource BrushTextPrimary}" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+      </DockPanel>
+    </Border>
+
+    <!-- Settings content -->
+    <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto" Padding="16,12,16,16">
+      <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+        <TextBlock Text="{Binding SettingsCategory}" Style="{StaticResource PageTitle}" Margin="0,0,0,2" />
+        <TextBlock Text="Changes apply immediately and persist. Theme/material may need a restart on some Windows builds; new shells pick up profile defaults."
+                   Foreground="{DynamicResource BrushTextMuted}" FontSize="11" Margin="0,0,0,12" TextWrapping="Wrap" />
+
+        <!-- General -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=General}">
+          <CheckBox Content="Open default shell on startup" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.General.OpenDefaultShellOnStartup}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Default workspace" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <ComboBox Width="180" HorizontalAlignment="Left" Margin="0,0,0,12"
+                    Text="{Binding CurrentSettings.General.DefaultWorkspace, UpdateSourceTrigger=PropertyChanged}"
+                    IsEditable="True" LostFocus="SettingsField_OnChanged">
+            <ComboBoxItem Content="Terminal" />
+            <ComboBoxItem Content="Sessions" />
+            <ComboBoxItem Content="Files" />
+          </ComboBox>
+          <CheckBox Content="Confirm exit when sessions are active" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.General.ConfirmExitWithActiveSessions}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Restore last activity section" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.General.RestoreLastActivity}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Show toast notifications" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.General.ShowToastNotifications}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Live terminal processes are never restored across application restarts."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Appearance content -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Appearance}">
+          <TextBlock Text="Application theme" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+            <Button Style="{StaticResource ChipButton}" Content="System" Click="ThemeSystem_OnClick" />
+            <Button Style="{StaticResource ChipButton}" Content="Dark" Click="ThemeDark_OnClick" />
+            <Button Style="{StaticResource ChipButton}" Content="Light" Click="ThemeLight_OnClick" />
+          </StackPanel>
+
+          <TextBlock Text="Window material" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+            <Button Style="{StaticResource ChipButton}" Content="Mica" Click="MaterialMica_OnClick" />
+            <Button Style="{StaticResource ChipButton}" Content="Acrylic" Click="MaterialAcrylic_OnClick" />
+            <Button Style="{StaticResource ChipButton}" Content="Solid" Click="MaterialSolid_OnClick" />
+          </StackPanel>
+
+          <TextBlock Text="Terminal font" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <DockPanel Margin="0,0,0,10">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Width="32" Height="28" Content="−" Style="{StaticResource ChipButton}" Margin="0,0,4,0"
+                      Command="{Binding DecreaseFontSizeCommand}" />
+              <Border MinWidth="44" Height="28" CornerRadius="8" Background="{DynamicResource BrushSurfaceElevated}"
+                      BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1" Padding="8,0">
+                <TextBlock Text="{Binding FontSize, StringFormat={}{0:0}}" VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="12" />
+              </Border>
+              <Button Width="32" Height="28" Content="+" Style="{StaticResource ChipButton}" Margin="4,0,0,0"
+                      Command="{Binding IncreaseFontSizeCommand}" />
+            </StackPanel>
+            <ComboBox ItemsSource="{Binding FontFamilies}" SelectedItem="{Binding FontFamily}"
+                      Height="28" FontSize="12" Margin="0,0,12,0" />
+          </DockPanel>
+
+          <TextBlock Text="Cursor" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,8" />
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,18">
+            <Button Style="{StaticResource ChipButton}" Content="Bar" Click="CursorBar_OnClick" />
+            <Button Style="{StaticResource ChipButton}" Content="Block" Click="CursorBlock_OnClick" />
+            <Button Style="{StaticResource ChipButton}" Content="Underline" Click="CursorUnderline_OnClick" />
+            <CheckBox Content="Blink" IsChecked="{Binding CursorBlink}" Margin="10,4,0,0"
+                      Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <TextBlock Text="Color schemes" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,10" />
+          <ItemsControl ItemsSource="{Binding SchemeTiles}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <WrapPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Width="148" Height="78" Margin="0,0,8,8" Cursor="Hand"
+                        Command="{Binding DataContext.SelectSchemeCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                        CommandParameter="{Binding}"
+                        Background="Transparent" BorderThickness="0" Padding="0">
+                  <Border CornerRadius="10" BorderThickness="1" Padding="8">
+                    <Border.Style>
+                      <Style TargetType="Border">
+                        <Setter Property="BorderBrush" Value="{DynamicResource BrushBorderSoft}" />
+                        <Setter Property="Background" Value="{DynamicResource BrushSurfaceElevated}" />
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                            <Setter Property="BorderBrush" Value="{DynamicResource BrushAccent}" />
+                            <Setter Property="Background" Value="{DynamicResource BrushAccentSoft}" />
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </Border.Style>
+                    <DockPanel>
+                      <Grid DockPanel.Dock="Bottom" Margin="0,4,0,0">
+                        <TextBlock Text="{Binding Name}" FontSize="11"
+                                   Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
+                        <TextBlock Text="✓" FontSize="11" HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource BrushAccent}"
+                                   Visibility="{Binding IsSelected, Converter={StaticResource BoolToVis}}" />
+                      </Grid>
+                      <Border CornerRadius="6" Background="{Binding Background, Converter={StaticResource StringToBrush}}" Height="40" Padding="6,4">
+                        <StackPanel>
+                          <TextBlock Text="$ ssh server" FontFamily="Consolas" FontSize="9"
+                                     Foreground="{Binding AccentSample, Converter={StaticResource StringToBrush}}" />
+                          <TextBlock Text="user@host:~$" FontFamily="Consolas" FontSize="9"
+                                     Foreground="{Binding Foreground, Converter={StaticResource StringToBrush}}" />
+                        </StackPanel>
+                      </Border>
+                    </DockPanel>
+                  </Border>
+                </Button>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <Border Margin="0,10,0,0" CornerRadius="8" Padding="10"
+                  Background="{DynamicResource BrushSurfaceElevated}"
+                  BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+            <StackPanel>
+              <TextBlock Text="Live preview" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6" />
+              <TextBlock FontFamily="{Binding FontFamily}" FontSize="{Binding FontSize}"
+                         Foreground="{DynamicResource BrushTextPrimary}">
+                <Run Text="$ ssh server" Foreground="{DynamicResource BrushAccent}" />
+              </TextBlock>
+              <TextBlock FontFamily="{Binding FontFamily}" FontSize="{Binding FontSize}"
+                         Foreground="{DynamicResource BrushTextMuted}" Margin="0,2,0,0"
+                         Text="user@host:~$" />
+            </StackPanel>
+          </Border>
+        </StackPanel>
+
+        <!-- Editor settings -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=editor}">
+          <TextBlock Text="Editor font" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <DockPanel Margin="0,0,0,12">
+            <ComboBox ItemsSource="{Binding FontFamilies}" SelectedItem="{Binding EditorFontFamily}"
+                      Height="28" FontSize="12" Margin="0,0,12,0" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <TextBlock Text="{Binding EditorFontSize, StringFormat={}{0:0} px}" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12" />
+              <TextBox Width="56" Text="{Binding EditorFontSize, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+            </StackPanel>
+          </DockPanel>
+
+          <TextBlock Text="Line height" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,14"
+                   Text="{Binding EditorLineHeight, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+
+          <TextBlock Text="Indentation" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+            <TextBlock Text="Tab size" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12" />
+            <TextBox Width="56" Text="{Binding EditorTabSize, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" Margin="0,0,16,0" />
+            <CheckBox Content="Insert spaces" IsChecked="{Binding EditorInsertSpaces}"
+                      Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
+          </StackPanel>
+
+          <TextBlock Text="Display" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <StackPanel Margin="0,0,0,14">
+            <CheckBox Content="Word wrap" IsChecked="{Binding EditorWordWrap}" Margin="0,0,0,6"
+                      Foreground="{DynamicResource BrushTextPrimary}" />
+            <CheckBox Content="Minimap" IsChecked="{Binding EditorMinimap}" Margin="0,0,0,6"
+                      Foreground="{DynamicResource BrushTextPrimary}" />
+            <CheckBox Content="Render whitespace" IsChecked="{Binding EditorRenderWhitespace}" Margin="0,0,0,6"
+                      Foreground="{DynamicResource BrushTextPrimary}" />
+            <CheckBox Content="Auto-save" IsChecked="{Binding EditorAutoSave}"
+                      Foreground="{DynamicResource BrushTextPrimary}" />
+          </StackPanel>
+
+          <Border CornerRadius="10" Padding="12"
+                  Background="{DynamicResource BrushSurfaceElevated}"
+                  BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+            <TextBlock FontSize="11" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap"
+                       Text="Monaco Editor powers syntax highlighting, find/replace, multi-cursor, and bracket matching. Remote SFTP files download to a private temp folder and upload atomically on save." />
+          </Border>
+        </StackPanel>
+
+        <!-- Terminal (behavior beyond Appearance) -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Terminal}">
+          <TextBlock Text="Default shell" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <ComboBox Width="180" HorizontalAlignment="Left" Margin="0,0,0,12" IsEditable="True"
+                    Text="{Binding CurrentSettings.Terminal.DefaultShell, UpdateSourceTrigger=PropertyChanged}"
+                    LostFocus="SettingsField_OnChanged">
+            <ComboBoxItem Content="PowerShell" />
+            <ComboBoxItem Content="Cmd" />
+            <ComboBoxItem Content="Wsl" />
+          </ComboBox>
+          <TextBlock Text="Scrollback lines" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="100" HorizontalAlignment="Left" Margin="0,0,0,12"
+                   Text="{Binding CurrentSettings.Terminal.ScrollbackLines, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+          <CheckBox Content="Copy on select" IsChecked="{Binding CurrentSettings.Terminal.CopyOnSelect}" Margin="0,0,0,8"
+                    Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="Right-click action" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,6" />
+          <ComboBox Width="160" HorizontalAlignment="Left" Margin="0,0,0,12"
+                    Text="{Binding CurrentSettings.Terminal.RightClickAction, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" />
+          <TextBlock Text="Bell" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <ComboBox Width="140" HorizontalAlignment="Left" Margin="0,0,0,12"
+                    Text="{Binding CurrentSettings.Terminal.BellStyle, UpdateSourceTrigger=PropertyChanged}" IsEditable="True" />
+          <TextBlock Text="Font, cursor and color schemes are under Appearance." FontSize="11"
+                     Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Profiles -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Profiles}">
+          <TextBlock Text="Local shell profiles" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <ItemsControl ItemsSource="{Binding ShellProfiles}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Border Margin="0,0,0,8" Padding="10" CornerRadius="8"
+                        Background="{DynamicResource BrushSurfaceElevated}"
+                        BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+                  <StackPanel>
+                    <DockPanel>
+                      <CheckBox DockPanel.Dock="Right" Content="Default" IsChecked="{Binding IsDefault}"
+                                Foreground="{DynamicResource BrushTextPrimary}" />
+                      <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,8,0" />
+                    </DockPanel>
+                    <TextBlock Text="{Binding Shell, StringFormat=Shell: {0}}" FontSize="11" Margin="0,6,0,0"
+                               Foreground="{DynamicResource BrushTextMuted}" />
+                    <TextBox Text="{Binding StartupDirectory, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0"
+                             ToolTip="Startup directory" />
+                    <TextBox Text="{Binding StartupArgs, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0"
+                             ToolTip="Startup arguments" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+
+        <!-- SSH -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=SSH}">
+          <TextBlock Text="Connection timeout (seconds)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,10"
+                   Text="{Binding CurrentSettings.Ssh.ConnectionTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                   LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Keepalive interval (seconds, 0=off)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,10"
+                   Text="{Binding CurrentSettings.Ssh.KeepAliveIntervalSeconds, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                   LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Default port" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,10"
+                   Text="{Binding CurrentSettings.Ssh.DefaultPort, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                   LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Default username" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="200" HorizontalAlignment="Left" Margin="0,0,0,10"
+                   Text="{Binding CurrentSettings.Ssh.DefaultUsername, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                   LostFocus="SettingsField_OnChanged" />
+          <CheckBox Content="Auto-reconnect" IsChecked="{Binding CurrentSettings.Ssh.AutoReconnect}" Margin="0,0,0,8"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Max reconnect attempts" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,10"
+                   Text="{Binding CurrentSettings.Ssh.MaxReconnectAttempts, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                   LostFocus="SettingsField_OnChanged" />
+          <CheckBox Content="Strict host key checking" IsChecked="{Binding CurrentSettings.Ssh.StrictHostKeyChecking}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Jump hosts are configured per session. Known hosts are managed under Security."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,10,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Files -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Files}">
+          <TextBlock Text="Default download directory" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Text="{Binding CurrentSettings.Files.DefaultDownloadDirectory, UpdateSourceTrigger=PropertyChanged}"
+                   Margin="0,0,0,10" Padding="6,4" LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Transfer conflict behavior" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <ComboBox Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"
+                    Text="{Binding CurrentSettings.Files.TransferConflictBehavior, UpdateSourceTrigger=PropertyChanged}" IsEditable="True"
+                    LostFocus="SettingsField_OnChanged" />
+          <CheckBox Content="Show hidden files" IsChecked="{Binding CurrentSettings.Files.ShowHiddenFiles}" Margin="0,0,0,8"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Human-readable sizes" IsChecked="{Binding CurrentSettings.Files.HumanReadableSizes}" Margin="0,0,0,8"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Notify when transfers complete" IsChecked="{Binding CurrentSettings.Files.NotifyOnTransferComplete}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+        </StackPanel>
+
+        <!-- History privacy / retention -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=History}">
+          <CheckBox Content="Enable command history" IsChecked="{Binding HistoryEnabled}" Margin="0,0,0,10"
+                    Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="Retention (days: 7 / 30 / 90 / 0=forever)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,12"
+                   Text="{Binding HistoryRetentionDays, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+          <TextBlock Text="Maximum entries" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="100" HorizontalAlignment="Left" Margin="0,0,0,12"
+                   Text="{Binding HistoryMaxEntries, UpdateSourceTrigger=PropertyChanged}" Padding="6,4" />
+          <CheckBox Content="Do not store commands from SSH sessions" IsChecked="{Binding HistoryExcludeSsh}"
+                    Margin="0,0,0,12" Foreground="{DynamicResource BrushTextPrimary}" />
+          <TextBlock Text="Exclude commands matching patterns (one per line)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Text="{Binding HistoryExcludePatternsText, UpdateSourceTrigger=PropertyChanged}"
+                   AcceptsReturn="True" Height="90" TextWrapping="Wrap" Padding="8,6"
+                   Background="{DynamicResource BrushSurfaceElevated}"
+                   BorderBrush="{DynamicResource BrushBorderSoft}"
+                   Foreground="{DynamicResource BrushTextPrimary}" />
+          <Button Style="{StaticResource CompactBtnDanger}" Content="Clear History" Margin="0,14,0,0"
+                  HorizontalAlignment="Left"
+                  Command="{Binding History.ClearCommand}" />
+        </StackPanel>
+
+        <!-- Keybindings -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Keybindings}">
+          <DockPanel Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" Style="{StaticResource CompactBtn}" Content="Restore defaults"
+                    Command="{Binding ResetAllKeybindingsCommand}" />
+            <TextBlock Text="Registered actions" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </DockPanel>
+          <DataGrid ItemsSource="{Binding KeybindingRows}" AutoGenerateColumns="False" Height="360"
+                    Style="{StaticResource DesktopDataGrid}"
+                    ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
+                    RowStyle="{StaticResource DesktopDataGridRow}"
+                    CellStyle="{StaticResource DesktopDataGridCell}"
+                    CanUserAddRows="False" HeadersVisibility="Column">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100" IsReadOnly="True" />
+              <DataGridTextColumn Header="Command" Binding="{Binding Title}" Width="*" IsReadOnly="True" />
+              <DataGridTextColumn Header="Shortcut" Binding="{Binding Gesture, UpdateSourceTrigger=PropertyChanged}" Width="140" />
+            </DataGrid.Columns>
+          </DataGrid>
+          <TextBlock Text="Conflicts are detected on save. Empty shortcut clears the override." FontSize="11"
+                     Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0" />
+        </StackPanel>
+
+        <!-- Security -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Security}">
+          <CheckBox Content="Confirm multi-line paste while broadcasting" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Security.ConfirmBroadcastMultiLinePaste}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Warn when broadcasting to multiple hosts" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Security.WarnBroadcastToMultipleHosts}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Block broadcast while Private Input is active" Margin="0,0,0,12"
+                    IsChecked="{Binding CurrentSettings.Security.BlockBroadcastWhilePrivateInput}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Trusted host keys" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,8" />
+          <DataGrid ItemsSource="{Binding KnownHosts}" AutoGenerateColumns="False" Height="180"
+                    Style="{StaticResource DesktopDataGrid}" CanUserAddRows="False"
+                    SelectedItem="{Binding SelectedKnownHost, Mode=TwoWay}">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Host:Port" Binding="{Binding HostPort}" Width="160" IsReadOnly="True" />
+              <DataGridTextColumn Header="SHA-256" Binding="{Binding Fingerprint}" Width="*" IsReadOnly="True" />
+            </DataGrid.Columns>
+          </DataGrid>
+          <Button Style="{StaticResource CompactBtnDanger}" Content="Remove selected host key" Margin="0,8,0,0"
+                  HorizontalAlignment="Left" Command="{Binding RemoveKnownHostCommand}"
+                  CommandParameter="{Binding SelectedKnownHost}" />
+          <TextBlock Text="Credentials are stored only in Windows Credential Manager and are never listed here."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,12,0,0" TextWrapping="Wrap" />
+          <TextBlock Text="Private Input Mode suppresses application history and broadcast only. It does not guarantee remote shells will not echo or log keystrokes."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <!-- Advanced -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Advanced}">
+          <CheckBox Content="Enable file logging" IsChecked="{Binding CurrentSettings.Advanced.EnableFileLogging}" Margin="0,0,0,8"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Max log files retained" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,12"
+                   Text="{Binding CurrentSettings.Advanced.MaxLogFiles, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                   LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Application data directory" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBlock Text="{Binding AppDataDirectory}" FontSize="11" FontFamily="Consolas" TextWrapping="Wrap"
+                     Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,8" />
+          <Button Style="{StaticResource CompactBtn}" Content="Open app data folder" HorizontalAlignment="Left"
+                  Command="{Binding OpenAppDataFolderCommand}" />
+        </StackPanel>
+
+        <!-- About -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=About}">
+          <TextBlock Text="X-Terminal" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4" />
+          <TextBlock Text="{Binding AboutVersion, StringFormat=Version {0}}" FontSize="12" Margin="0,0,0,4" />
+          <TextBlock Text="{Binding AboutRuntime}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" />
+          <TextBlock Text="Dependencies: .NET 8, WPF, CommunityToolkit.Mvvm, WebView2, SSH.NET, xterm.js, Monaco Editor."
+                     FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12" Foreground="{DynamicResource BrushTextMuted}" />
+          <Button Style="{StaticResource CompactBtn}" Content="Copy diagnostics" HorizontalAlignment="Left"
+                  Command="{Binding CopyDiagnosticsCommand}" />
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </Grid>
+</UserControl>

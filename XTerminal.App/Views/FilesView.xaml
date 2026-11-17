@@ -1,0 +1,186 @@
+<UserControl x:Class="XTerminal.App.Views.FilesView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:XTerminal.App.Converters"
+             Background="{DynamicResource BrushAppBackground}"
+             PreviewKeyDown="View_OnPreviewKeyDown">
+  <UserControl.Resources>
+    <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisInvert" Invert="True" />
+  </UserControl.Resources>
+
+  <Grid Margin="10,8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+
+    <DockPanel Grid.Row="0" Height="34" Margin="0,0,0,6">
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Style="{StaticResource PageTitle}" Text="Files" />
+        <TextBlock Style="{StaticResource PageSubtitle}" Text="Local file explorer" />
+      </StackPanel>
+    </DockPanel>
+
+    <DockPanel Grid.Row="1" Height="32" Margin="0,0,0,6">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+        <Button Style="{StaticResource CompactIconBtn}" Content="←" ToolTip="Back (Alt+Left)"
+                Command="{Binding GoBackCommand}" IsEnabled="{Binding CanGoBack}" />
+        <Button Style="{StaticResource CompactIconBtn}" Content="→" ToolTip="Forward (Alt+Right)"
+                Command="{Binding GoForwardCommand}" IsEnabled="{Binding CanGoForward}" />
+        <Button Style="{StaticResource CompactIconBtn}" Content="↑" ToolTip="Up (Alt+Up)"
+                Command="{Binding GoUpCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Home" Command="{Binding GoHomeCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Refresh" Command="{Binding RefreshCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="New File" Command="{Binding NewFileCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="New Folder" Command="{Binding NewFolderCommand}" />
+        <Border CornerRadius="6" Padding="8,0" Height="28" Margin="8,0,0,0" MinWidth="140"
+                Background="{DynamicResource BrushSurfaceElevated}"
+                BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+          <TextBox x:Name="FilterBox" Text="{Binding QuickFilter, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0"
+                   VerticalContentAlignment="Center" Background="Transparent"
+                   Foreground="{DynamicResource BrushTextPrimary}" FontSize="12"
+                   ToolTip="Quick filter (Ctrl+F)" />
+        </Border>
+        <Border CornerRadius="6" Padding="8,0" Height="28" Margin="4,0,0,0" MinWidth="140"
+                Background="{DynamicResource BrushSurfaceElevated}"
+                BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+          <TextBox Text="{Binding SearchQuery, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0"
+                   VerticalContentAlignment="Center" Background="Transparent"
+                   Foreground="{DynamicResource BrushTextPrimary}" FontSize="12"
+                   ToolTip="Search files" KeyDown="SearchBox_OnKeyDown" />
+        </Border>
+        <CheckBox Content="Subfolders" IsChecked="{Binding SearchRecursive}" Margin="6,0,0,0"
+                  Foreground="{DynamicResource BrushTextPrimary}" VerticalAlignment="Center" />
+        <Button Style="{StaticResource CompactBtn}" Content="Search" Command="{Binding SearchCommand}" Margin="4,0,0,0" />
+        <Button Style="{StaticResource CompactBtn}" Content="Clear" Command="{Binding ClearSearchCommand}" Margin="2,0,0,0" />
+        <TextBlock Text="{Binding SearchStatus}" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center"
+                   Foreground="{DynamicResource BrushTextMuted}" />
+      </StackPanel>
+    </DockPanel>
+
+    <DockPanel Grid.Row="2" Height="32" Margin="0,0,0,6">
+      <Button DockPanel.Dock="Right" Style="{StaticResource CompactBtn}" Content="Go"
+              Command="{Binding NavigateTypedPathCommand}" Margin="4,0,0,0" />
+      <Border CornerRadius="6" Padding="8,0" Height="28" VerticalAlignment="Center"
+              Background="{DynamicResource BrushSurfaceElevated}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <TextBox x:Name="PathBox" Text="{Binding PathText, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0"
+                 VerticalContentAlignment="Center" Background="Transparent"
+                 Foreground="{DynamicResource BrushTextPrimary}" CaretBrush="{DynamicResource BrushAccent}"
+                 FontFamily="Consolas" FontSize="12" KeyDown="PathBox_OnKeyDown" />
+      </Border>
+    </DockPanel>
+
+    <Grid Grid.Row="3">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="220" MinWidth="160" />
+        <ColumnDefinition Width="6" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <Border Grid.Column="0" CornerRadius="8" Background="{DynamicResource BrushSurface}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <DockPanel>
+          <TextBlock DockPanel.Dock="Top" Text="Folders" FontSize="11" FontWeight="SemiBold"
+                     Foreground="{DynamicResource BrushTextMuted}" Margin="10,8,10,4" />
+          <TreeView ItemsSource="{Binding TreeRoots}" BorderThickness="0" Background="Transparent"
+                    Padding="4" FontSize="12"
+                    SelectedItemChanged="Tree_OnSelectedItemChanged">
+            <TreeView.ItemContainerStyle>
+              <Style TargetType="TreeViewItem">
+                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                <Setter Property="Padding" Value="2,1" />
+                <Setter Property="Foreground" Value="{DynamicResource BrushTextPrimary}" />
+                <EventSetter Event="Expanded" Handler="TreeItem_OnExpanded" />
+                <EventSetter Event="Collapsed" Handler="TreeItem_OnCollapsed" />
+              </Style>
+            </TreeView.ItemContainerStyle>
+            <TreeView.ItemTemplate>
+              <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+              </HierarchicalDataTemplate>
+            </TreeView.ItemTemplate>
+          </TreeView>
+        </DockPanel>
+      </Border>
+
+      <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Stretch" Background="Transparent" />
+
+      <Border Grid.Column="2" CornerRadius="8" Background="{DynamicResource BrushSurface}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <Grid>
+          <DataGrid x:Name="FileGrid" ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedItem}"
+                    Style="{StaticResource DesktopDataGrid}"
+                    ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
+                    RowStyle="{StaticResource DesktopDataGridRow}"
+                    CellStyle="{StaticResource DesktopDataGridCell}"
+                    EnableRowVirtualization="True" VirtualizingPanel.IsVirtualizing="True"
+                    MouseDoubleClick="Grid_OnMouseDoubleClick"
+                    ContextMenuOpening="Grid_OnContextMenuOpening"
+                    Visibility="{Binding ShowSearchResults, Converter={StaticResource BoolToVisInvert}}">
+            <DataGrid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Open" Click="CtxOpen_OnClick" />
+                <MenuItem Header="Open in Editor" Click="CtxOpenEditor_OnClick" />
+                <MenuItem Header="Open Terminal Here" Click="CtxTerminal_OnClick" />
+                <MenuItem Header="Open in Explorer" Click="CtxExplorer_OnClick" />
+                <Separator />
+                <MenuItem Header="Copy Path" Click="CtxCopyPath_OnClick" />
+                <MenuItem Header="Copy Filename" Click="CtxCopyName_OnClick" />
+                <Separator />
+                <MenuItem Header="New File" Command="{Binding NewFileCommand}" />
+                <MenuItem Header="New Folder" Command="{Binding NewFolderCommand}" />
+                <MenuItem Header="Rename" Click="CtxRename_OnClick" />
+                <MenuItem Header="Delete" Click="CtxDelete_OnClick" />
+                <Separator />
+                <MenuItem Header="Properties" Click="CtxProperties_OnClick" />
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="*" MinWidth="140" />
+              <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+              <DataGridTextColumn Header="Type" Binding="{Binding TypeLabel}" Width="80" />
+              <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedDisplay}" Width="140" />
+              <DataGridTextColumn Header="Attributes" Binding="{Binding AttributesDisplay}" Width="120" />
+            </DataGrid.Columns>
+          </DataGrid>
+
+          <DataGrid ItemsSource="{Binding SearchResults}" SelectedItem="{Binding SelectedItem}"
+                    Style="{StaticResource DesktopDataGrid}"
+                    ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
+                    RowStyle="{StaticResource DesktopDataGridRow}"
+                    CellStyle="{StaticResource DesktopDataGridCell}"
+                    EnableRowVirtualization="True"
+                    MouseDoubleClick="Grid_OnMouseDoubleClick"
+                    ContextMenuOpening="Grid_OnContextMenuOpening"
+                    Visibility="{Binding ShowSearchResults, Converter={StaticResource BoolToVis}}">
+            <DataGrid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Open" Click="CtxOpen_OnClick" />
+                <MenuItem Header="Open in Editor" Click="CtxOpenEditor_OnClick" />
+                <MenuItem Header="Open Terminal Here" Click="CtxTerminal_OnClick" />
+                <MenuItem Header="Copy Path" Click="CtxCopyPath_OnClick" />
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="180" />
+              <DataGridTextColumn Header="Path" Binding="{Binding FullPath}" Width="*" MinWidth="200" />
+              <DataGridTextColumn Header="Size" Binding="{Binding SizeDisplay}" Width="80" />
+              <DataGridTextColumn Header="Modified" Binding="{Binding ModifiedDisplay}" Width="140" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </Grid>
+      </Border>
+    </Grid>
+
+    <Border Grid.Row="4" Margin="0,6,0,0" Padding="8,5" CornerRadius="6"
+            Background="#33E81123" BorderBrush="#88E81123" BorderThickness="1"
+            Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
+      <TextBlock Text="{Binding ErrorBanner}" Foreground="#FFEF9A9A" FontSize="11" TextWrapping="Wrap" />
+    </Border>
+  </Grid>
+</UserControl>

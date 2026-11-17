@@ -1,0 +1,124 @@
+<UserControl x:Class="XTerminal.App.Views.SnippetsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:XTerminal.App.Converters"
+             Background="{DynamicResource BrushAppBackground}"
+             PreviewKeyDown="View_OnPreviewKeyDown">
+  <UserControl.Resources>
+    <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
+    <conv:BoolToVisibilityConverter x:Key="BoolToVisInvert" Invert="True" />
+  </UserControl.Resources>
+
+  <Grid Margin="10,8">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <DockPanel Grid.Row="0" Height="34" Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button Style="{StaticResource CompactBtnPrimary}" Content="+ Snippet" Command="{Binding NewSnippetCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="+ Folder" Command="{Binding NewFolderCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Import" Command="{Binding ImportCommand}" />
+        <Button Style="{StaticResource CompactBtn}" Content="Export" Command="{Binding ExportCommand}" />
+      </StackPanel>
+      <StackPanel VerticalAlignment="Center">
+        <TextBlock Style="{StaticResource PageTitle}" Text="Snippets" />
+        <TextBlock Style="{StaticResource PageSubtitle}" Text="Insert by default · Run requires explicit action" />
+      </StackPanel>
+    </DockPanel>
+
+    <DockPanel Grid.Row="1" Height="32" Margin="0,0,0,6">
+      <ComboBox DockPanel.Dock="Right" ItemsSource="{Binding ShellFilters}" SelectedItem="{Binding ShellFilter}"
+                Width="110" Height="28" Margin="4,0,0,0" />
+      <ToggleButton DockPanel.Dock="Right" Content="Favorites" IsChecked="{Binding FavoritesOnly}"
+                    Height="28" Padding="10,0" Margin="0,0,4,0" Cursor="Hand" FontSize="12"
+                    Background="{DynamicResource BrushSurfaceElevated}"
+                    Foreground="{DynamicResource BrushTextPrimary}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+      <Border CornerRadius="6" Padding="8,0" Height="28"
+              Background="{DynamicResource BrushSurfaceElevated}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" BorderThickness="0"
+                 VerticalContentAlignment="Center" Background="Transparent"
+                 Foreground="{DynamicResource BrushTextPrimary}" CaretBrush="{DynamicResource BrushAccent}" FontSize="12" />
+      </Border>
+    </DockPanel>
+
+    <Grid Grid.Row="2" Visibility="{Binding HasSnippets, Converter={StaticResource BoolToVis}}">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="180" />
+        <ColumnDefinition Width="6" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <Border Grid.Column="0" CornerRadius="8" Background="{DynamicResource BrushSurface}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <TreeView ItemsSource="{Binding Roots}" BorderThickness="0" Background="Transparent" Padding="4" FontSize="12"
+                  SelectedItemChanged="Tree_OnSelectedItemChanged">
+          <TreeView.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Title}" />
+            </DataTemplate>
+          </TreeView.ItemTemplate>
+        </TreeView>
+      </Border>
+      <GridSplitter Grid.Column="1" Width="6" Background="Transparent" />
+
+      <Border Grid.Column="2" CornerRadius="8" Background="{DynamicResource BrushSurface}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
+        <DockPanel>
+          <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8,6">
+            <Button Style="{StaticResource CompactBtnPrimary}" Content="Insert" Command="{Binding InsertSnippetCommand}"
+                    CommandParameter="{Binding SelectedSnippet}" />
+            <Button Style="{StaticResource CompactBtn}" Content="Run" Command="{Binding RunSnippetCommand}"
+                    CommandParameter="{Binding SelectedSnippet}" ToolTip="Explicitly execute in the active terminal" />
+            <Button Style="{StaticResource CompactBtn}" Content="Edit" Command="{Binding EditSnippetCommand}"
+                    CommandParameter="{Binding SelectedSnippet}" />
+            <Button Style="{StaticResource CompactBtn}" Content="Duplicate" Command="{Binding DuplicateSnippetCommand}"
+                    CommandParameter="{Binding SelectedSnippet}" />
+            <Button Style="{StaticResource CompactBtn}" Content="★" Command="{Binding ToggleFavoriteCommand}"
+                    CommandParameter="{Binding SelectedSnippet}" />
+            <Button Style="{StaticResource CompactBtnDanger}" Content="Delete" Command="{Binding DeleteSnippetCommand}"
+                    CommandParameter="{Binding SelectedSnippet}" />
+          </StackPanel>
+          <DataGrid ItemsSource="{Binding FlatSnippets}" SelectedItem="{Binding SelectedSnippet}"
+                    Style="{StaticResource DesktopDataGrid}"
+                    ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
+                    RowStyle="{StaticResource DesktopDataGridRow}"
+                    CellStyle="{StaticResource DesktopDataGridCell}"
+                    EnableRowVirtualization="True"
+                    MouseDoubleClick="Grid_OnMouseDoubleClick"
+                    ContextMenuOpening="Grid_OnContextMenuOpening">
+            <DataGrid.ContextMenu>
+              <ContextMenu>
+                <MenuItem Header="Insert" Click="CtxInsert_OnClick" />
+                <MenuItem Header="Run" Click="CtxRun_OnClick" />
+                <MenuItem Header="Edit" Click="CtxEdit_OnClick" />
+                <MenuItem Header="Duplicate" Click="CtxDup_OnClick" />
+                <MenuItem Header="Favorite" Click="CtxFav_OnClick" />
+                <Separator />
+                <MenuItem Header="Delete" Click="CtxDel_OnClick" />
+              </ContextMenu>
+            </DataGrid.ContextMenu>
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="140" />
+              <DataGridTextColumn Header="Command" Binding="{Binding Command}" Width="*" />
+              <DataGridTextColumn Header="Shell" Binding="{Binding ShellCompatibility}" Width="90" />
+              <DataGridCheckBoxColumn Header="★" Binding="{Binding IsFavorite, Mode=OneWay}" Width="36" IsReadOnly="True" />
+            </DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
+      </Border>
+    </Grid>
+
+    <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center"
+                Visibility="{Binding HasSnippets, Converter={StaticResource BoolToVisInvert}}">
+      <TextBlock Style="{StaticResource EmptyStateTitle}" Text="No snippets yet" />
+      <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                 Text="Save frequently used terminal commands for quick access." />
+      <Button Style="{StaticResource CompactBtnPrimary}" Content="Create Snippet"
+              Command="{Binding NewSnippetCommand}" HorizontalAlignment="Center" Height="30" Padding="14,0" />
+    </StackPanel>
+  </Grid>
+</UserControl>
