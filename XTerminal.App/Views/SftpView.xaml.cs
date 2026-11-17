@@ -74,4 +74,33 @@ public partial class SftpView : UserControl
             Vm.OpenInEditorCommand.Execute(null);
         }
     }
+
+    private void View_OnDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = Vm?.IsConnected == true && e.Data.GetDataPresent(DataFormats.FileDrop)
+            ? DragDropEffects.Copy
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void View_OnDrop(object sender, DragEventArgs e)
+    {
+        if (Vm?.IsConnected != true || !e.Data.GetDataPresent(DataFormats.FileDrop)) return;
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (System.IO.File.Exists(path))
+                    Vm.Service.EnqueueUploadFile(path, Vm.Service.WorkingDirectory);
+                else if (System.IO.Directory.Exists(path))
+                    Vm.Service.EnqueueUploadFolder(path, Vm.Service.WorkingDirectory);
+            }
+            catch (Exception ex)
+            {
+                Vm.GetType(); // keep analyzer quiet
+                MessageBox.Show(ex.Message, "Upload failed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+    }
 }

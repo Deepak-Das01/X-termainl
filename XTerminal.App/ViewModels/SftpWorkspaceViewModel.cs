@@ -7,6 +7,7 @@ using XTerminal.App.Helpers;
 using XTerminal.App.Services;
 using XTerminal.Core.Models.Sftp;
 using XTerminal.Core.Models.Ssh;
+using XTerminal.Core.Services;
 using XTerminal.Core.Settings;
 using XTerminal.Protocols.Ssh;
 
@@ -20,6 +21,7 @@ public partial class SftpWorkspaceViewModel : ObservableObject
     private bool _navigating;
     private FilesAppSettings _filesSettings = new();
     private NotificationService? _notifications;
+    private TransferConflictAction? _stickyConflictAction;
 
     [ObservableProperty] private string _pathText = "/";
     [ObservableProperty] private string _statusText = "Select an SSH session to open SFTP.";
@@ -31,8 +33,11 @@ public partial class SftpWorkspaceViewModel : ObservableObject
     [ObservableProperty] private string _errorBanner = string.Empty;
     [ObservableProperty] private bool _hasError;
     [ObservableProperty] private bool _hasTransfers;
+    [ObservableProperty] private string _entryFilter = string.Empty;
+    [ObservableProperty] private string _queueProgressText = "";
 
     public ObservableCollection<SftpEntryViewModel> Entries { get; } = new();
+    private readonly List<SftpEntryViewModel> _allEntries = new();
     public ObservableCollection<SftpBreadcrumbItem> Breadcrumbs { get; } = new();
     public ObservableCollection<SftpTreeNode> TreeRoots { get; } = new();
     public ObservableCollection<SftpTransferItemViewModel> Transfers { get; } = new();
@@ -48,12 +53,89 @@ public partial class SftpWorkspaceViewModel : ObservableObject
         _service.ConnectionChanged += OnConnectionChanged;
         _service.TransfersChanged += RefreshTransfers;
         _service.TransferUpdated += OnTransferUpdated;
+        _service.ConflictResolver = ResolveConflictOnUi;
     }
 
     public void ApplyFilesSettings(FilesAppSettings settings)
     {
         _filesSettings = settings ?? new FilesAppSettings();
+        _service.ConflictPolicy = MapConflictBehavior(_filesSettings.TransferConflictBehavior);
+        _service.MaxConcurrentTransfers = Math.Clamp(_filesSettings.MaxConcurrentTransfers, 1, 4);
+        _stickyConflictAction = null;
         _ = RefreshAsync();
+    }
+
+    private static TransferConflictAction MapConflictBehavior(string? behavior) =>
+        behavior?.Trim() switch
+        {
+            "Overwrite" => TransferConflictAction.Overwrite,
+            "Skip" => TransferConflictAction.Skip,
+            "Rename" => TransferConflictAction.Rename,
+            "Prompt" or "Ask" or _ => TransferConflictAction.Ask
+        };
+
+    private TransferConflictAction ResolveConflictOnUi(TransferConflictInfo info)
+    {
+        if (_stickyConflictAction is { } sticky)
+            return sticky;
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null)
+            return TransferConflictAction.Ask;
+
+        return dispatcher.Invoke(() =>
+        {
+            if (_stickyConflictAction is { } remembered)
+                return remembered;
+
+            var srcSize = info.SourceSize is null ? "N/A" : TransferProgress.FormatBytes(info.SourceSize.Value);
+            var dstSize = info.DestinationSize is null ? "N/A" : TransferProgress.FormatBytes(info.DestinationSize.Value);
+            var srcM = info.SourceModifiedUtc?.UtcDateTime.ToString("u") ?? "N/A";
+            var dstM = info.DestinationModifiedUtc?.UtcDateTime.ToString("u") ?? "N/A";
+
+            var result = MessageBox.Show(
+                $"{info.Direction} conflict\n\n" +
+                $"Source: {info.SourceName} ({srcSize}, mtime {srcM})\n" +
+                $"Destination: {info.DestinationPath}\n" +
+                $"Existing: {info.DestinationName} ({dstSize}, mtime {dstM})\n" +
+                (info.DestinationIsDirectory ? "(destination is a directory)\n" : "") +
+                "\nYes = Overwrite\nNo = Skip\nCancel = Cancel transfer",
+                "Transfer conflict",
+                MessageBoxButton.YesNoCancel,
+                MessageBoxImage.Warning);
+
+            if (result == MessageBoxResult.Cancel)
+                throw new OperationCanceledException("Transfer conflict cancelled by user.");
+
+            TransferConflictAction action;
+            if (result == MessageBoxResult.Yes)
+            {
+                action = TransferConflictAction.Overwrite;
+            }
+            else
+            {
+                var rename = MessageBox.Show(
+                    $"Skip '{info.DestinationName}', or rename the incoming file instead?\n\n" +
+                    "Yes = Rename\nNo = Skip",
+                    "Rename or skip",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                action = rename == MessageBoxResult.Yes
+                    ? TransferConflictAction.Rename
+                    : TransferConflictAction.Skip;
+            }
+
+            var applyAll = MessageBox.Show(
+                "Apply this choice to all remaining conflicts in this transfer batch?\n\n" +
+                "This does not change your global Files settings.",
+                "Apply to remaining",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+            if (applyAll == MessageBoxResult.Yes)
+                _stickyConflictAction = action;
+
+            return action;
+        });
     }
 
     public void AttachNotifications(NotificationService notifications) =>
@@ -246,9 +328,19 @@ public partial class SftpWorkspaceViewModel : ObservableObject
     private async Task DeleteAsync()
     {
         if (!_service.IsConnected || SelectedEntry is null) return;
-        var kind = SelectedEntry.IsDirectory ? "folder" : "file";
+        if (SftpPathSafety.IsDangerousRemoteDeleteTarget(SelectedEntry.FullPath))
+        {
+            MessageBox.Show(
+                $"Refusing to delete protected path:\n{SelectedEntry.FullPath}",
+                "Delete blocked",
+                MessageBoxButton.OK,
+                MessageBoxImage.Stop);
+            return;
+        }
+
+        var kind = SelectedEntry.IsDirectory ? "folder (recursive; symlinks are not followed)" : "file";
         var result = MessageBox.Show(
-            $"Delete remote {kind} '{SelectedEntry.Name}'?\n\n{SelectedEntry.FullPath}\n\nThis cannot be undone.",
+            $"Delete remote {kind}?\n\nExact target:\n{SelectedEntry.FullPath}\n\nThis cannot be undone.",
             "Confirm delete",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);
@@ -288,6 +380,53 @@ public partial class SftpWorkspaceViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task ChangePermissionsAsync()
+    {
+        if (!_service.IsConnected || SelectedEntry is null) return;
+
+        UnixPermissionBits initial;
+        try
+        {
+            initial = SelectedEntry.ModeBits is { } mode
+                ? UnixPermissionBits.FromMode(mode)
+                : UnixPermissionBits.FromOctal(
+                    SelectedEntry.Permissions is { Length: >= 10 }
+                        ? SymbolicToOctalGuess(SelectedEntry.Permissions)
+                        : "644");
+        }
+        catch
+        {
+            initial = UnixPermissionBits.FromOctal("644");
+        }
+
+        var dlg = new Views.UnixPermissionEditorWindow(SelectedEntry.FullPath, initial)
+        {
+            Owner = Application.Current?.MainWindow
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
+            await _service.SetPermissionsAsync(SelectedEntry.FullPath, dlg.ResultBits.ToMode());
+            await RefreshAsync();
+            StatusText = $"Permissions set to {dlg.ResultBits.ToOctal():D3} ({dlg.ResultBits.ToSymbolic()})";
+        }
+        catch (Exception ex) { ErrorBanner = Sanitize(ex.Message); }
+    }
+
+    private static string SymbolicToOctalGuess(string symbolic)
+    {
+        // Expect "drwxr-xr-x" style; ignore type char.
+        var s = symbolic.Length >= 10 ? symbolic[1..] : symbolic;
+        if (s.Length < 9) return "644";
+        int Bit(int i, char expected) => s[i] == expected ? 1 : 0;
+        var owner = Bit(0, 'r') * 4 + Bit(1, 'w') * 2 + Bit(2, 'x');
+        var group = Bit(3, 'r') * 4 + Bit(4, 'w') * 2 + Bit(5, 'x');
+        var other = Bit(6, 'r') * 4 + Bit(7, 'w') * 2 + Bit(8, 'x');
+        return $"{owner}{group}{other}";
+    }
+
+    [RelayCommand]
     private void OpenInEditor()
     {
         if (!_service.IsConnected || SelectedEntry is null || SelectedEntry.IsDirectory) return;
@@ -323,6 +462,31 @@ public partial class SftpWorkspaceViewModel : ObservableObject
         _service.ClearCompletedTransfers();
         RefreshTransfers();
     }
+
+    [RelayCommand]
+    private void CancelAllTransfers()
+    {
+        if (Transfers.Count == 0) return;
+        var confirm = MessageBox.Show(
+            "Cancel all active and queued transfers?",
+            "Cancel all transfers",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (confirm != MessageBoxResult.Yes) return;
+        _service.CancelAllTransfers();
+        RefreshTransfers();
+    }
+
+    [RelayCommand]
+    private void RemoveTransfer(SftpTransferItemViewModel? item)
+    {
+        item ??= SelectedTransfer;
+        if (item is null) return;
+        _service.RemoveTransfer(item.Id);
+        RefreshTransfers();
+    }
+
+    partial void OnEntryFilterChanged(string value) => ApplyEntryFilter();
 
     public async Task SaveRemoteFileAsync(string remotePath, string content)
     {
@@ -374,14 +538,15 @@ public partial class SftpWorkspaceViewModel : ObservableObject
             }
 
             var list = await _service.ListAsync(path);
-            Entries.Clear();
+            _allEntries.Clear();
             foreach (var e in list)
             {
                 if (!_filesSettings.ShowHiddenFiles && e.Name.StartsWith('.'))
                     continue;
-                Entries.Add(SftpEntryViewModel.From(e));
+                _allEntries.Add(SftpEntryViewModel.From(e));
             }
 
+            ApplyEntryFilter();
             PathText = _service.WorkingDirectory;
             RebuildBreadcrumbs(_service.WorkingDirectory);
             StatusText = $"{Entries.Count} items — {_service.WorkingDirectory}";
@@ -444,17 +609,40 @@ public partial class SftpWorkspaceViewModel : ObservableObject
         });
     }
 
+    private void ApplyEntryFilter()
+    {
+        Entries.Clear();
+        IEnumerable<SftpEntryViewModel> q = _allEntries;
+        if (!string.IsNullOrWhiteSpace(EntryFilter))
+        {
+            q = q.Where(e => e.Name.Contains(EntryFilter, StringComparison.OrdinalIgnoreCase));
+        }
+
+        foreach (var e in q.OrderByDescending(e => e.IsDirectory).ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase))
+            Entries.Add(e);
+    }
+
     private void RefreshTransfers()
     {
         Application.Current?.Dispatcher.Invoke(() =>
         {
             Transfers.Clear();
+            long transferred = 0, total = 0;
+            var unknown = false;
             foreach (var t in _service.GetTransfers())
             {
                 Transfers.Add(SftpTransferItemViewModel.From(t));
+                transferred += t.TransferredBytes;
+                if (t.TotalSizeUnknown || t.TotalBytes < 0) unknown = true;
+                else total += t.TotalBytes;
             }
 
             HasTransfers = Transfers.Count > 0;
+            QueueProgressText = !HasTransfers
+                ? ""
+                : unknown
+                    ? $"{TransferProgress.FormatBytes(transferred)} transferred (some sizes N/A)"
+                    : $"{TransferProgress.FormatBytes(transferred)} / {TransferProgress.FormatBytes(total)}";
         });
     }
 
@@ -512,24 +700,28 @@ public partial class SftpEntryViewModel : ObservableObject
     public required string Name { get; init; }
     public required string FullPath { get; init; }
     public bool IsDirectory { get; init; }
+    public bool IsSymlink { get; init; }
     public long Size { get; init; }
     public DateTime ModifiedUtc { get; init; }
     public string Permissions { get; init; } = string.Empty;
     public string Owner { get; init; } = string.Empty;
+    public short? ModeBits { get; init; }
 
     public string SizeDisplay => IsDirectory ? "—" : FormatSize(Size);
     public string ModifiedDisplay => ModifiedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-    public string TypeGlyph => IsDirectory ? "📁" : "📄";
+    public string TypeGlyph => IsSymlink ? "🔗" : IsDirectory ? "📁" : "📄";
 
     public static SftpEntryViewModel From(SftpRemoteEntry e) => new()
     {
         Name = e.Name,
         FullPath = e.FullPath,
         IsDirectory = e.IsDirectory,
+        IsSymlink = e.IsSymlink,
         Size = e.Size,
         ModifiedUtc = e.ModifiedUtc,
         Permissions = e.Permissions,
-        Owner = string.IsNullOrWhiteSpace(e.Owner) ? "—" : e.Owner
+        Owner = string.IsNullOrWhiteSpace(e.Owner) ? "—" : e.Owner,
+        ModeBits = e.ModeBits
     };
 
     private static string FormatSize(long bytes)
@@ -566,7 +758,7 @@ public partial class SftpTransferItemViewModel : ObservableObject
     public SftpTransferDirection Direction { get; private set; }
     public string DirectionLabel => Direction == SftpTransferDirection.Upload ? "Upload" : "Download";
     public bool CanCancel => State is SftpTransferState.Queued or SftpTransferState.Transferring;
-    public bool CanRetry => State is SftpTransferState.Failed or SftpTransferState.Cancelled;
+    public bool CanRetry => State is SftpTransferState.Failed or SftpTransferState.Cancelled or SftpTransferState.Skipped;
 
     public static SftpTransferItemViewModel From(SftpTransferSnapshot s)
     {
@@ -588,9 +780,11 @@ public partial class SftpTransferItemViewModel : ObservableObject
         Percentage = s.Percentage;
         BytesPerSecond = s.BytesPerSecond;
         ErrorMessage = s.ErrorMessage ?? string.Empty;
-        SpeedDisplay = s.BytesPerSecond <= 0 ? "—" : $"{FormatSize((long)s.BytesPerSecond)}/s";
-        SizeDisplay = $"{FormatSize(s.TransferredBytes)} / {FormatSize(s.TotalBytes)}";
-        EtaDisplay = s.Eta is null ? "—" : FormatEta(s.Eta.Value);
+        SpeedDisplay = s.BytesPerSecond <= 0 ? "N/A" : $"{FormatSize((long)s.BytesPerSecond)}/s";
+        SizeDisplay = s.TotalSizeUnknown || s.TotalBytes < 0
+            ? $"{FormatSize(s.TransferredBytes)} / N/A"
+            : $"{FormatSize(s.TransferredBytes)} / {FormatSize(s.TotalBytes)}";
+        EtaDisplay = s.Eta is null ? "N/A" : FormatEta(s.Eta.Value);
         OnPropertyChanged(nameof(CanCancel));
         OnPropertyChanged(nameof(CanRetry));
         OnPropertyChanged(nameof(DirectionLabel));

@@ -65,10 +65,14 @@ public sealed class FilesAppSettings
 {
     public string DefaultDownloadDirectory { get; set; } =
         Environment.GetFolderPath(Environment.SpecialFolder.UserProfile) + "\\Downloads";
-    public string TransferConflictBehavior { get; set; } = "Prompt"; // Prompt | Overwrite | Skip
+    public string TransferConflictBehavior { get; set; } = "Prompt"; // Prompt | Overwrite | Skip | Rename
     public bool ShowHiddenFiles { get; set; }
     public bool HumanReadableSizes { get; set; } = true;
     public bool NotifyOnTransferComplete { get; set; } = true;
+    /// <summary>Max concurrent SFTP transfers on a single connection (1–4). Default 1 for SSH.NET safety.</summary>
+    public int MaxConcurrentTransfers { get; set; } = 1;
+    /// <summary>Maximum remote text file size openable in the integrated editor (bytes).</summary>
+    public long MaxEditorFileBytes { get; set; } = 2_000_000;
 }
 
 public sealed class SecurityAppSettings
@@ -82,6 +86,12 @@ public sealed class AdvancedAppSettings
 {
     public bool EnableFileLogging { get; set; } = true;
     public int MaxLogFiles { get; set; } = 14;
+    /// <summary>Parse OSC 133 shell-integration sequences when the shell emits them.</summary>
+    public bool EnableShellIntegration { get; set; }
+    /// <summary>Restore tab layout on startup (never restores terminal buffers or auto-runs commands).</summary>
+    public bool RestoreWorkspaceLayout { get; set; } = true;
+    /// <summary>When true with RestoreWorkspaceLayout, attempt SSH reconnect for restored SSH tabs.</summary>
+    public bool AutoReconnectRestoredSessions { get; set; }
 }
 
 public sealed class KeybindingEntry

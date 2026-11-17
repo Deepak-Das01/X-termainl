@@ -3,7 +3,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:XTerminal.App.ViewModels"
              xmlns:conv="clr-namespace:XTerminal.App.Converters"
-             Background="{DynamicResource BrushAppBackground}">
+             Background="{DynamicResource BrushAppBackground}"
+             AllowDrop="True"
+             Drop="View_OnDrop"
+             DragOver="View_OnDragOver">
   <UserControl.Resources>
     <conv:BoolToVisibilityConverter x:Key="BoolToVis" />
     <conv:BoolToVisibilityConverter x:Key="BoolToVisInvert" Invert="True" />
@@ -102,27 +105,33 @@
         <Border Grid.Column="2" CornerRadius="8" Background="{DynamicResource BrushSurface}"
                 BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="1">
           <DockPanel>
-            <ScrollViewer DockPanel.Dock="Top" HorizontalScrollBarVisibility="Auto"
-                          VerticalScrollBarVisibility="Disabled" Margin="8,4,8,0" Height="24">
-              <ItemsControl ItemsSource="{Binding Breadcrumbs}">
-                <ItemsControl.ItemsPanel>
-                  <ItemsPanelTemplate>
-                    <StackPanel Orientation="Horizontal" />
-                  </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                  <DataTemplate>
-                    <Button Content="{Binding Label}" Cursor="Hand" Padding="4,1" Margin="0,0,2,0"
-                            Background="Transparent" BorderThickness="0" FontSize="11"
-                            Foreground="{DynamicResource BrushAccent}"
-                            Click="Breadcrumb_OnClick" Tag="{Binding Path}" />
-                  </DataTemplate>
-                </ItemsControl.ItemTemplate>
-              </ItemsControl>
-            </ScrollViewer>
+            <DockPanel DockPanel.Dock="Top" Margin="8,4,8,0">
+              <TextBox DockPanel.Dock="Right" Width="140" Height="24" Margin="8,0,0,0" Padding="6,2"
+                       ToolTip="Search current directory"
+                       Text="{Binding EntryFilter, UpdateSourceTrigger=PropertyChanged}"
+                       VerticalContentAlignment="Center" FontSize="11" />
+              <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled" Height="24">
+                <ItemsControl ItemsSource="{Binding Breadcrumbs}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                      <Button Content="{Binding Label}" Cursor="Hand" Padding="4,1" Margin="0,0,2,0"
+                              Background="Transparent" BorderThickness="0" FontSize="11"
+                              Foreground="{DynamicResource BrushAccent}"
+                              Click="Breadcrumb_OnClick" Tag="{Binding Path}" />
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
+              </ScrollViewer>
+            </DockPanel>
             <TextBlock DockPanel.Dock="Bottom" Text="{Binding StatusText}" Margin="10,4"
                        FontSize="11" Foreground="{DynamicResource BrushTextMuted}" />
             <DataGrid ItemsSource="{Binding Entries}" SelectedItem="{Binding SelectedEntry}"
+                      SelectionMode="Extended"
                       Style="{StaticResource DesktopDataGrid}"
                       ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
                       RowStyle="{StaticResource DesktopDataGridRow}"
@@ -135,6 +144,7 @@
                   <MenuItem Header="Open in Editor" Command="{Binding OpenInEditorCommand}" />
                   <Separator />
                   <MenuItem Header="Rename" Command="{Binding RenameCommand}" />
+                  <MenuItem Header="Change Permissions…" Command="{Binding ChangePermissionsCommand}" />
                   <MenuItem Header="Delete" Command="{Binding DeleteCommand}" />
                   <MenuItem Header="Copy Remote Path" Command="{Binding CopyRemotePathCommand}" />
                   <MenuItem Header="Properties" Command="{Binding ShowPropertiesCommand}" />
@@ -184,13 +194,20 @@
           <DockPanel>
             <TextBlock Text="Transfer Manager" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" HorizontalAlignment="Right">
+              <TextBlock Text="{Binding QueueProgressText}" VerticalAlignment="Center" Margin="0,0,8,0"
+                         FontSize="11" Foreground="{DynamicResource BrushTextMuted}" />
               <Button Style="{StaticResource CompactBtn}" Content="Cancel" Command="{Binding CancelTransferCommand}"
                       CommandParameter="{Binding SelectedTransfer}" Margin="8,0,0,0"
                       IsEnabled="{Binding SelectedTransfer.CanCancel}"
                       ToolTip="Cancel the selected in-progress transfer" />
+              <Button Style="{StaticResource CompactBtn}" Content="Cancel all" Command="{Binding CancelAllTransfersCommand}"
+                      ToolTip="Cancel all queued and active transfers" />
               <Button Style="{StaticResource CompactBtn}" Content="Retry" Command="{Binding RetryTransferCommand}"
                       CommandParameter="{Binding SelectedTransfer}"
                       ToolTip="Retry a failed transfer" />
+              <Button Style="{StaticResource CompactBtn}" Content="Remove" Command="{Binding RemoveTransferCommand}"
+                      CommandParameter="{Binding SelectedTransfer}"
+                      ToolTip="Remove a queued or finished transfer from the list" />
               <Button Style="{StaticResource CompactBtn}" Content="Clear completed"
                       Command="{Binding ClearCompletedTransfersCommand}"
                       ToolTip="Remove finished transfers from the list" />

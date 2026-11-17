@@ -369,7 +369,20 @@
           <TextBlock Text="Transfer conflict behavior" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
           <ComboBox Width="160" HorizontalAlignment="Left" Margin="0,0,0,10"
                     Text="{Binding CurrentSettings.Files.TransferConflictBehavior, UpdateSourceTrigger=PropertyChanged}" IsEditable="True"
-                    LostFocus="SettingsField_OnChanged" />
+                    LostFocus="SettingsField_OnChanged">
+            <ComboBoxItem Content="Prompt" />
+            <ComboBoxItem Content="Overwrite" />
+            <ComboBoxItem Content="Skip" />
+            <ComboBoxItem Content="Rename" />
+          </ComboBox>
+          <TextBlock Text="Max concurrent transfers (1–4; default 1)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,10" Padding="6,4"
+                   Text="{Binding CurrentSettings.Files.MaxConcurrentTransfers, UpdateSourceTrigger=PropertyChanged}"
+                   LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Max editor file size (bytes)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="120" HorizontalAlignment="Left" Margin="0,0,0,10" Padding="6,4"
+                   Text="{Binding CurrentSettings.Files.MaxEditorFileBytes, UpdateSourceTrigger=PropertyChanged}"
+                   LostFocus="SettingsField_OnChanged" />
           <CheckBox Content="Show hidden files" IsChecked="{Binding CurrentSettings.Files.ShowHiddenFiles}" Margin="0,0,0,8"
                     Foreground="{DynamicResource BrushTextPrimary}"
                     Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />

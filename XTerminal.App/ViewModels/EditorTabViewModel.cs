@@ -168,8 +168,11 @@ public partial class EditorTabViewModel : ObservableObject, IWorkspaceTab, IAsyn
     {
         var name = Kind switch
         {
+            EditorDocumentKind.RemoteSftp when Remote is not null =>
+                string.IsNullOrWhiteSpace(Remote.RemoteHost)
+                    ? $"{Path.GetFileName(Remote.RemotePath)} @ {Remote.SessionName}"
+                    : $"{Path.GetFileName(Remote.RemotePath)} @ {Remote.RemoteHost}",
             EditorDocumentKind.Local when !string.IsNullOrEmpty(LocalPath) => Path.GetFileName(LocalPath),
-            EditorDocumentKind.RemoteSftp when Remote is not null => Path.GetFileName(Remote.RemotePath),
             _ => "Untitled"
         };
 
