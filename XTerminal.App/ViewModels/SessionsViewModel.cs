@@ -98,6 +98,53 @@ public partial class SessionsViewModel : ObservableObject
         if (session is not null) SftpRequested?.Invoke(session);
     }
 
+    /// <summary>Last sanitized SSH diagnostic report text (for Copy diagnostics).</summary>
+    public string? LastDiagnosticClipboard { get; private set; }
+
+    [RelayCommand]
+    private async Task DiagnoseSessionAsync(SshSessionRecord? session)
+    {
+        session ??= SelectedSession;
+        if (session is null) return;
+
+        try
+        {
+            var tester = new SshConnectionTester(_secrets, _hostKeys);
+            var report = await tester.DiagnoseAsync(session);
+            LastDiagnosticClipboard = report.ToClipboardText();
+            var title = report.FailureKind == SshFailureKind.None
+                ? "Diagnostics — OK"
+                : $"Diagnostics — {report.FailureKind}";
+            var preview = string.Join(
+                Environment.NewLine,
+                report.Steps.Take(12).Select(s =>
+                    $"[{(s.Success ? "OK" : "FAIL")}] {s.Phase}: {s.Message}"));
+            var copy = System.Windows.MessageBox.Show(
+                $"{session.Name}\n{session.Username}@{session.Host}:{session.Port}\n" +
+                $"Auth: {session.AuthMethod}\nResult: {report.FailureKind}\n" +
+                $"Duration: {report.Duration?.TotalSeconds:0.##}s\n\n{preview}\n\n" +
+                "Copy full sanitized diagnostics to clipboard?",
+                title,
+                System.Windows.MessageBoxButton.YesNo,
+                report.FailureKind == SshFailureKind.None
+                    ? System.Windows.MessageBoxImage.Information
+                    : System.Windows.MessageBoxImage.Warning);
+            if (copy == System.Windows.MessageBoxResult.Yes)
+            {
+                try { System.Windows.Clipboard.SetText(LastDiagnosticClipboard); }
+                catch { /* ignore */ }
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(
+                SshConnectionDiagnosticReport.Sanitize(ex.Message),
+                "Diagnostics failed",
+                System.Windows.MessageBoxButton.OK,
+                System.Windows.MessageBoxImage.Error);
+        }
+    }
+
     public SshSessionRecord? FindSession(Guid id) =>
         _document.Sessions.FirstOrDefault(s => s.Id == id);
 
@@ -291,6 +338,102 @@ public partial class SessionsViewModel : ObservableObject
             "Export complete",
             System.Windows.MessageBoxButton.OK,
             System.Windows.MessageBoxImage.Information);
+    }
+
+    [RelayCommand]
+    private async Task ImportOpenSshConfigAsync()
+    {
+        var defaultPath = OpenSshConfigParser.DefaultConfigPath;
+        var dlg = new Microsoft.Win32.OpenFileDialog
+        {
+            Title = "Import OpenSSH config",
+            Filter = "OpenSSH config|config|All files (*.*)|*.*",
+            FileName = File.Exists(defaultPath) ? "config" : string.Empty,
+            InitialDirectory = File.Exists(defaultPath)
+                ? Path.GetDirectoryName(defaultPath)
+                : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+        };
+        if (dlg.ShowDialog() != true) return;
+
+        OpenSshImportPreview preview;
+        try
+        {
+            preview = OpenSshConfigParser.ParseFile(dlg.FileName);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(ex.Message, "OpenSSH import failed",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+            return;
+        }
+
+        var importable = preview.Entries.Where(OpenSshConfigParser.CanImport).ToList();
+        var unsupported = preview.GlobalUnsupported
+            .Concat(preview.Entries.SelectMany(e => e.UnsupportedDirectives))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var unsupportedSummary = unsupported.Count == 0
+            ? "No unsupported directives reported."
+            : "Unsupported / blocked directives:\n• " + string.Join("\n• ", unsupported.Take(12))
+              + (unsupported.Count > 12 ? $"\n• …and {unsupported.Count - 12} more" : string.Empty);
+
+        var confirm = System.Windows.MessageBox.Show(
+            $"OpenSSH config: {preview.SourcePath}\n\n" +
+            $"Importable hosts: {importable.Count} of {preview.Entries.Count}\n\n" +
+            $"{unsupportedSummary}\n\n" +
+            "Yes = import importable entries (rename on name conflicts)\n" +
+            "Secrets are never imported.\n\nCancel = abort",
+            "Import OpenSSH config",
+            System.Windows.MessageBoxButton.YesNo,
+            System.Windows.MessageBoxImage.Question);
+
+        if (confirm != System.Windows.MessageBoxResult.Yes) return;
+
+        var existingNames = new HashSet<string>(
+            _document.Sessions.Select(s => s.Name),
+            StringComparer.OrdinalIgnoreCase);
+
+        var added = 0;
+        foreach (var entry in importable)
+        {
+            var record = OpenSshConfigParser.ToSession(entry);
+            // Never import secrets — ToSession only carries key paths / connection metadata.
+            record.Id = Guid.NewGuid();
+            if (existingNames.Contains(record.Name))
+            {
+                record.Name = SessionImportExportUniqueName(record.Name, existingNames);
+            }
+
+            existingNames.Add(record.Name);
+            record.Tags ??= new List<string>();
+            if (!record.Tags.Contains("openssh-import", StringComparer.OrdinalIgnoreCase))
+                record.Tags.Add("openssh-import");
+            _document.Sessions.Add(record);
+            added++;
+        }
+
+        await _library.SaveAsync(_document);
+        RebuildTree();
+
+        System.Windows.MessageBox.Show(
+            $"Imported {added} OpenSSH host(s). Passwords and key material were not imported.",
+            "OpenSSH import complete",
+            System.Windows.MessageBoxButton.OK,
+            System.Windows.MessageBoxImage.Information);
+    }
+
+    private static string SessionImportExportUniqueName(string baseName, HashSet<string> existing)
+    {
+        if (!existing.Contains(baseName)) return baseName;
+        for (var i = 2; i < 1000; i++)
+        {
+            var candidate = $"{baseName} ({i})";
+            if (!existing.Contains(candidate)) return candidate;
+        }
+
+        return $"{baseName}-{Guid.NewGuid():N}";
     }
 
     [RelayCommand]

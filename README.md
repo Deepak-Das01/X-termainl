@@ -139,7 +139,7 @@ cd X-termainl
 ### Start — Debug (development)
 
 ```powershell
-cd C:\Projects\X-Terminal
+cd <project-root>
 dotnet run --project XTerminal.App\XTerminal.App.csproj -c Debug
 ```
 
@@ -148,7 +148,7 @@ Or open `XTerminal.sln` in Visual Studio / Cursor and press **F5** on the `XTerm
 ### Start — Release
 
 ```powershell
-cd C:\Projects\X-Terminal
+cd <project-root>
 
 # Build
 dotnet build XTerminal.sln -c Release

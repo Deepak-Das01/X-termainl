@@ -16,7 +16,9 @@ public enum SshAuthMethod
     Password = 0,
     PrivateKey = 1,
     Agent = 2,
-    PasswordAndPrivateKey = 3
+    PasswordAndPrivateKey = 3,
+    /// <summary>Responds to keyboard-interactive prompts using stored password when appropriate.</summary>
+    KeyboardInteractive = 4
 }
 
 public enum SshForwardType

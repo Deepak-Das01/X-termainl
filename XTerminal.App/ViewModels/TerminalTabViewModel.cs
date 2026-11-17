@@ -2,6 +2,7 @@ using System.Text;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using XTerminal.Core.Models;
+using XTerminal.Core.Services;
 using XTerminal.Protocols;
 using XTerminal.Protocols.Ssh;
 
@@ -14,6 +15,7 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
     private readonly object _bufferLock = new();
     private readonly StringBuilder _buffer = new();
     private Action<string>? _outputHandler;
+    private readonly ShellIntegrationParser _shellIntegration = new();
 
     [ObservableProperty] private string _title = "Terminal";
     [ObservableProperty] private string _status = "Starting…";
@@ -23,10 +25,13 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
     [ObservableProperty] private bool _isPlaceholder;
     [ObservableProperty] private string? _remoteHost;
     [ObservableProperty] private string? _remoteUser;
+    [ObservableProperty] private string? _authMethodLabel;
+    [ObservableProperty] private string? _connectionDurationLabel;
     [ObservableProperty] private bool _privateInputMode;
     [ObservableProperty] private bool _isBroadcastTarget;
     [ObservableProperty] private double _zoomFontSize;
     [ObservableProperty] private int? _latencyMs;
+    [ObservableProperty] private int? _lastExitCode;
 
     public Guid Id { get; } = Guid.NewGuid();
     public SessionDefinition Definition { get; }
@@ -87,6 +92,8 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
             {
                 RemoteHost = ssh.Hostname;
                 RemoteUser = ssh.Username;
+                AuthMethodLabel = ssh.AuthMethodLabel;
+                RefreshDuration(ssh);
             }
 
             ConnectionState = _host.State;
@@ -96,7 +103,7 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
         catch (Exception ex)
         {
             ConnectionState = ConnectionState.Failed;
-            Status = "Failed";
+            Status = ex.Message.Length > 120 ? ex.Message[..120] + "…" : ex.Message;
             StatusChanged?.Invoke();
             Emit($"\u001b[31mFailed to start session:\u001b[0m {Sanitize(ex.Message)}\r\n");
             IsPlaceholder = true;
@@ -157,18 +164,69 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
         _host.Resize((short)cols, (short)rows);
     }
 
+    /// <summary>Optional OSC 133 parsing — never executes local actions from terminal sequences.</summary>
+    public bool ShellIntegrationEnabled
+    {
+        get => _shellIntegration.Enabled;
+        set
+        {
+            _shellIntegration.Enabled = value;
+            if (!value)
+            {
+                _shellIntegration.Reset();
+                LastExitCode = null;
+            }
+        }
+    }
+
     private void OnStateChanged(ConnectionState state, string? message)
     {
         ConnectionState = state;
         Status = message ?? state.ToString();
+        if (_host is SshSessionHost ssh)
+        {
+            AuthMethodLabel = ssh.AuthMethodLabel;
+            RefreshDuration(ssh);
+        }
+
         if (_host?.LatencyMs is int ms)
             LatencyMs = ms;
         else if (state is ConnectionState.Disconnected or ConnectionState.Failed or ConnectionState.Cancelled)
+        {
             LatencyMs = null;
+            ConnectionDurationLabel = null;
+        }
+
         StatusChanged?.Invoke();
     }
 
-    private void OnOutput(byte[] data) => Emit(Encoding.UTF8.GetString(data));
+    private void RefreshDuration(SshSessionHost ssh)
+    {
+        if (ssh.ConnectionDuration is { } d)
+            ConnectionDurationLabel = d.TotalHours >= 1
+                ? $"{(int)d.TotalHours}h {d.Minutes:D2}m"
+                : $"{d.Minutes:D2}:{d.Seconds:D2}";
+        else
+            ConnectionDurationLabel = null;
+    }
+
+    private void OnOutput(byte[] data)
+    {
+        var text = Encoding.UTF8.GetString(data);
+        if (_shellIntegration.Enabled && !PrivateInputMode)
+        {
+            foreach (var ev in _shellIntegration.Push(text))
+            {
+                if (ev.Kind == ShellIntegrationEventKind.CommandFinished)
+                    LastExitCode = ev.ExitCode;
+                if (ev.Kind == ShellIntegrationEventKind.Directory &&
+                    !string.IsNullOrWhiteSpace(ev.WorkingDirectory))
+                    Definition.WorkingDirectory = ev.WorkingDirectory;
+            }
+        }
+
+        Emit(text);
+    }
 
     private void Emit(string text)
     {

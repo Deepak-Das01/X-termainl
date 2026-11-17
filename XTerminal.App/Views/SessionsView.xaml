@@ -23,6 +23,9 @@
         <Button Style="{StaticResource CompactBtnPrimary}" Content="+ New Session" Command="{Binding NewSessionCommand}" />
         <Button Style="{StaticResource CompactBtn}" Content="New Folder" Command="{Binding NewFolderCommand}" />
         <Button Style="{StaticResource CompactBtn}" Content="Import" Click="Import_OnClick" />
+        <Button Style="{StaticResource CompactBtn}" Content="Import OpenSSH"
+                Command="{Binding ImportOpenSshConfigCommand}"
+                ToolTip="Import hosts from ~/.ssh/config (no secrets)" />
         <Button Style="{StaticResource CompactBtn}" Content="Export" Click="Export_OnClick" />
       </StackPanel>
       <StackPanel VerticalAlignment="Center">
@@ -102,6 +105,9 @@
                       CommandParameter="{Binding SelectedSession}" ToolTip="Connect (Enter)" />
               <Button Style="{StaticResource CompactBtn}" Content="SFTP" Command="{Binding OpenSftpCommand}"
                       CommandParameter="{Binding SelectedSession}" />
+              <Button Style="{StaticResource CompactBtn}" Content="Diagnose" Command="{Binding DiagnoseSessionCommand}"
+                      CommandParameter="{Binding SelectedSession}"
+                      ToolTip="DNS / TCP / SSH diagnostics for the selected session (no network scan)" />
               <Button Style="{StaticResource CompactBtn}" Content="Edit" Command="{Binding EditSessionCommand}"
                       CommandParameter="{Binding SelectedSession}" />
               <Button Style="{StaticResource CompactBtn}" Content="★" ToolTip="Favorite"
@@ -111,6 +117,8 @@
               <Button Style="{StaticResource CompactBtn}" Content="Export" Command="{Binding ExportSessionsCommand}"
                       ToolTip="Export sessions without secrets" />
               <Button Style="{StaticResource CompactBtn}" Content="Import" Command="{Binding ImportSessionsCommand}" />
+              <Button Style="{StaticResource CompactBtn}" Content="Import OpenSSH" Command="{Binding ImportOpenSshConfigCommand}"
+                      ToolTip="Import from ~/.ssh/config (partial)" />
               <Button Style="{StaticResource CompactBtnDanger}" Content="Delete" Click="Delete_OnClick" />
             </StackPanel>
             <TextBlock Text="Sessions" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center"

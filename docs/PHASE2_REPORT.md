@@ -2,7 +2,7 @@
 
 ## 1. Executive summary
 
-Phase 2 delivers functional Settings categories, pane context menus, expanded command palette, broadcast modes with safety prompts, history/private-input documentation and tests, Ports UI honesty for unsupported byte metrics, versioned session import/export without secrets, GitHub Actions CI, and **44** passing Release regression tests. Default App `bin` output remains locked by running `XTerminal` PID **31308**; Release builds succeed via `_phase2_out`.
+Phase 2 delivers functional Settings categories, pane context menus, expanded command palette, broadcast modes with safety prompts, history/private-input documentation and tests, Ports UI honesty for unsupported byte metrics, versioned session import/export without secrets, GitHub Actions CI, and **44** passing Release regression tests. Default App `bin` output remains locked by running `XTerminal` a running local process; Release builds succeed via `_phase2_out`.
 
 ## 2. Files added and modified (primary)
 
@@ -88,7 +88,7 @@ Phase 2 delivers functional Settings categories, pane context menus, expanded co
 ```
 Passed!  Failed: 0, Passed: 44, Skipped: 0, Total: 44
 Configuration: Release
-Output: C:\Projects\X-Terminal\_phase2_out
+Output: <project-root>\_phase2_out
 ```
 
 ## 9. Complete Release build results
@@ -98,7 +98,7 @@ dotnet build XTerminal.App -c Release -o _phase2_out
 → Build succeeded (0 errors)
 ```
 
-**Blocker for default bin path:** `XTerminal` PID **31308** locks `XTerminal.App\bin\Release\net8.0-windows\*.dll`. Process was not terminated.
+**Blocker for default bin path:** `XTerminal` a running local process locks `XTerminal.App\bin\Release\net8.0-windows\*.dll`. Process was not terminated.
 
 ## 10. Manual validation checklist
 
@@ -150,7 +150,7 @@ dotnet build XTerminal.App -c Release -o _phase2_out
 ### Git initialization (when ready)
 
 ```
-cd C:\Projects\X-Terminal
+cd <project-root>
 git init
 git add .
 git commit -m "Phase 2: settings, broadcast, import/export, CI, tests"

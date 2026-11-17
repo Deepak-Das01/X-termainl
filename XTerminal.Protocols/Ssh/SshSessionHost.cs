@@ -18,6 +18,7 @@ public sealed class SshSessionHost : ISessionHost
     private SshSessionRecord? _record;
     private SshClient? _client;
     private SshClient? _jumpClient;
+    private readonly List<SshClient> _jumpChainClients = new();
     private SshConnectionLease? _shellLease;
     private bool _ownsClientExclusively;
     private ShellStream? _shell;
@@ -49,9 +50,16 @@ public sealed class SshSessionHost : ISessionHost
     public bool IsImplemented => true;
     public string? StatusMessage { get; private set; }
     public ConnectionState State { get; private set; } = ConnectionState.Idle;
-    public string? Hostname => _record?.Host;
+    public string? Hostname => _record is null ? null : $"{_record.Host}:{(_record.Port <= 0 ? 22 : _record.Port)}";
     public string? Username => _record?.Username;
+    public string? AuthMethodLabel => _record?.AuthMethod.ToString();
+    public DateTimeOffset? ConnectedAtUtc { get; private set; }
+    public TimeSpan? ConnectionDuration =>
+        ConnectedAtUtc is null || State != ConnectionState.Connected
+            ? null
+            : DateTimeOffset.UtcNow - ConnectedAtUtc;
     public int? LatencyMs { get; private set; }
+    public SshFailureKind LastFailureKind { get; private set; } = SshFailureKind.None;
 
     public event Action<byte[]>? OutputReceived;
     public event Action? Closed;
@@ -153,9 +161,19 @@ public sealed class SshSessionHost : ISessionHost
 
         try
         {
-            WriteSystem($"\u001b[90mConnecting to {_record.Username}@{_record.Host}:{_record.Port}…\u001b[0m\r\n");
+            var hopErrors = JumpHostChain.Validate(
+                JumpHostChain.FromSession(_record),
+                _record.Host,
+                _record.Port <= 0 ? 22 : _record.Port);
+            if (hopErrors.Count > 0)
+                throw new InvalidOperationException("Jump host chain invalid: " + string.Join(" ", hopErrors));
+
+            WriteSystem($"\u001b[90mConnecting to {_record.Username}@{_record.Host}:{_record.Port} ({_record.AuthMethod})…\u001b[0m\r\n");
+            if (!string.IsNullOrWhiteSpace(_record.ProxyJumpHost))
+                WriteSystem($"\u001b[90mVia jump {_record.ProxyJumpUsername ?? _record.Username}@{_record.ProxyJumpHost}:{(_record.ProxyJumpPort <= 0 ? 22 : _record.ProxyJumpPort)}…\u001b[0m\r\n");
 
             SshClient client;
+            // Jump sessions keep exclusive ownership — shared leases are not safe across bastion tunnels yet.
             var canShare = _connectionManager is not null &&
                            string.IsNullOrWhiteSpace(_record.ProxyJumpHost);
             if (canShare &&
@@ -208,22 +226,30 @@ public sealed class SshSessionHost : ISessionHost
             }
 
             _reconnectAttempt = 0;
-            SetState(ConnectionState.Connected, "Connected");
+            ConnectedAtUtc = DateTimeOffset.UtcNow;
+            LastFailureKind = SshFailureKind.None;
+            SetState(ConnectionState.Connected,
+                $"Connected · {_record.AuthMethod} · {_record.Username}@{_record.Host}:{(_record.Port <= 0 ? 22 : _record.Port)}");
             WriteSystem($"\u001b[32mConnected.\u001b[0m\r\n");
             StartLatencyProbe();
         }
         catch (OperationCanceledException)
         {
             await DisconnectCoreAsync();
+            ConnectedAtUtc = null;
+            LastFailureKind = SshFailureKind.Cancelled;
             SetState(ConnectionState.Cancelled, "Connection cancelled");
             WriteSystem("\u001b[33mConnection cancelled.\u001b[0m\r\n");
         }
         catch (Exception ex)
         {
             await DisconnectCoreAsync();
-            var safe = Sanitize(ex.Message);
-            SetState(ConnectionState.Failed, safe);
-            WriteSystem($"\u001b[31mConnection failed:\u001b[0m {safe}\r\n");
+            ConnectedAtUtc = null;
+            LastFailureKind = SshConnectionDiagnosticReport.Classify(ex);
+            var safe = SshConnectionDiagnosticReport.Sanitize(ex.Message);
+            var labeled = $"[{LastFailureKind}] {safe}";
+            SetState(ConnectionState.Failed, labeled);
+            WriteSystem($"\u001b[31mConnection failed ({LastFailureKind}):\u001b[0m {safe}\r\n");
 
             if (_record?.AutoReconnect == true && _reconnectAttempt < _record.MaxReconnectAttempts)
             {
@@ -257,24 +283,74 @@ public sealed class SshSessionHost : ISessionHost
 
     private async Task<SshClient> CreateClientViaJumpAsync(SshSessionRecord session, CancellationToken token)
     {
-        var jumpUser = session.ProxyJumpUsername ?? session.Username;
-        var jumpMethods = await SshAuthFactory.CreateAsync(session, _secrets, forJumpHost: true, token);
-        var jumpInfo = new ConnectionInfo(
-            session.ProxyJumpHost!,
-            session.ProxyJumpPort <= 0 ? 22 : session.ProxyJumpPort,
-            jumpUser,
-            jumpMethods)
+        var hops = JumpHostChain.FromSession(session);
+        if (hops.Count == 0)
+            throw new InvalidOperationException("Jump host is configured but the hop chain is empty.");
+
+        SshClient? previous = null;
+        for (var i = 0; i < hops.Count; i++)
         {
-            Timeout = TimeSpan.FromSeconds(Math.Max(5, session.ConnectionTimeoutSeconds))
-        };
+            var hop = hops[i];
+            WriteSystem($"\u001b[90mJump hop {i + 1}/{hops.Count}: {hop.Username ?? session.Username}@{hop.Host}:{hop.Port}…\u001b[0m\r\n");
 
-        ApplyCompression(jumpInfo, session.Compression);
-        _jumpClient = new SshClient(jumpInfo);
-        ConfigureClient(_jumpClient, session, isJump: true);
-        await Task.Run(() => _jumpClient.Connect(), token);
+            string dialHost;
+            int dialPort;
+            if (previous is null)
+            {
+                dialHost = hop.Host;
+                dialPort = hop.Port;
+            }
+            else
+            {
+                var link = new ForwardedPortLocal("127.0.0.1", 0, hop.Host, (uint)hop.Port);
+                previous.AddForwardedPort(link);
+                link.Start();
+                _forwards.Add(link);
+                dialHost = "127.0.0.1";
+                dialPort = (int)link.BoundPort;
+            }
 
-        var local = new ForwardedPortLocal("127.0.0.1", 0, session.Host, (uint)session.Port);
-        _jumpClient.AddForwardedPort(local);
+            // Intermediate hops reuse jump-host credentials. Per-hop ProfileId auth is not wired yet.
+            var hopUser = hop.Username
+                          ?? (i == 0 ? session.ProxyJumpUsername : null)
+                          ?? session.Username;
+            var hopMethods = await SshAuthFactory.CreateAsync(session, _secrets, forJumpHost: true, token);
+            var hopInfo = new ConnectionInfo(dialHost, dialPort, hopUser, hopMethods)
+            {
+                Timeout = TimeSpan.FromSeconds(Math.Max(5, session.ConnectionTimeoutSeconds))
+            };
+            ApplyCompression(hopInfo, session.Compression);
+            var hopClient = new SshClient(hopInfo)
+            {
+                KeepAliveInterval = TimeSpan.FromSeconds(Math.Max(0, session.KeepAliveIntervalSeconds))
+            };
+            AttachHostKey(hopClient, hop.Host, hop.Port, session);
+            hopClient.ErrorOccurred += (_, args) =>
+            {
+                var msg = Sanitize(args.Exception.Message);
+                SetState(ConnectionState.Failed, msg);
+            };
+
+            try
+            {
+                await Task.Run(() => hopClient.Connect(), token);
+            }
+            catch
+            {
+                try { hopClient.Dispose(); } catch { /* ignore */ }
+                throw;
+            }
+
+            _jumpChainClients.Add(hopClient);
+            if (i == 0)
+                _jumpClient = hopClient;
+            previous = hopClient;
+        }
+
+        var egress = previous ?? throw new InvalidOperationException("Jump chain produced no client.");
+        var targetPort = session.Port <= 0 ? 22 : session.Port;
+        var local = new ForwardedPortLocal("127.0.0.1", 0, session.Host, (uint)targetPort);
+        egress.AddForwardedPort(local);
         local.Start();
         _forwards.Add(local);
 
@@ -284,8 +360,16 @@ public sealed class SshSessionHost : ISessionHost
             Timeout = TimeSpan.FromSeconds(Math.Max(5, session.ConnectionTimeoutSeconds))
         };
         ApplyCompression(targetInfo, session.Compression);
-        var target = new SshClient(targetInfo);
-        ConfigureClient(target, session);
+        var target = new SshClient(targetInfo)
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(Math.Max(0, session.KeepAliveIntervalSeconds))
+        };
+        AttachHostKey(target, session.Host, targetPort, session);
+        target.ErrorOccurred += (_, args) =>
+        {
+            var msg = Sanitize(args.Exception.Message);
+            SetState(ConnectionState.Failed, msg);
+        };
         return target;
     }
 
@@ -295,8 +379,8 @@ public sealed class SshSessionHost : ISessionHost
         var host = isJump ? session.ProxyJumpHost! : session.Host;
         var port = isJump
             ? (session.ProxyJumpPort <= 0 ? 22 : session.ProxyJumpPort)
-            : session.Port;
-        _hostKeys.Attach(client, host, port, session.StrictHostKeyChecking);
+            : (session.Port <= 0 ? 22 : session.Port);
+        AttachHostKey(client, host, port, session);
 
         client.ErrorOccurred += (_, args) =>
         {
@@ -304,6 +388,9 @@ public sealed class SshSessionHost : ISessionHost
             SetState(ConnectionState.Failed, msg);
         };
     }
+
+    private void AttachHostKey(SshClient client, string host, int port, SshSessionRecord session) =>
+        _hostKeys.Attach(client, host, port <= 0 ? 22 : port, session.StrictHostKeyChecking);
 
     private void StartPortForwards(SshClient client, SshSessionRecord session)
     {
@@ -504,10 +591,15 @@ public sealed class SshSessionHost : ISessionHost
             try { if (_client?.IsConnected == true) _client.Disconnect(); } catch { /* ignore */ }
             try { _client?.Dispose(); } catch { /* ignore */ }
 
-            try { if (_jumpClient?.IsConnected == true) _jumpClient.Disconnect(); } catch { /* ignore */ }
-            try { _jumpClient?.Dispose(); } catch { /* ignore */ }
+            for (var i = _jumpChainClients.Count - 1; i >= 0; i--)
+            {
+                var hop = _jumpChainClients[i];
+                try { if (hop.IsConnected) hop.Disconnect(); } catch { /* ignore */ }
+                try { hop.Dispose(); } catch { /* ignore */ }
+            }
         }
 
+        _jumpChainClients.Clear();
         _client = null;
         _jumpClient = null;
         _ownsClientExclusively = false;

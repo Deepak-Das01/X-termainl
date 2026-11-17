@@ -55,14 +55,12 @@ internal static class SshAuthFactory
             }
             case SshAuthMethod.Agent:
             {
-                // SSH.NET 2026 has no cross-platform agent client in this build.
-                // Use unencrypted default keys from ~/.ssh (typical agent-less workstation setup).
+                // SSH.NET in this build has no Pageant/ssh-agent client.
+                // Fall back to unencrypted default keys from ~/.ssh and report clearly if none work.
                 foreach (var candidate in EnumerateDefaultKeyPaths())
                 {
                     if (!File.Exists(candidate))
-                    {
                         continue;
-                    }
 
                     try
                     {
@@ -77,10 +75,40 @@ internal static class SshAuthFactory
                 if (methods.Count == 0)
                 {
                     throw new InvalidOperationException(
-                        "SSH agent mode: no usable default keys found under ~/.ssh (id_ed25519/id_rsa/id_ecdsa). " +
-                        "Use Private Key auth with an explicit key path, or load an unencrypted default key.");
+                        "SSH agent mode is not fully supported in this build (no Pageant/ssh-agent bridge). " +
+                        "No usable default keys were found under ~/.ssh (id_ed25519/id_rsa/id_ecdsa). " +
+                        "Use Private Key auth with an explicit key path instead.");
                 }
 
+                break;
+            }
+            case SshAuthMethod.KeyboardInteractive:
+            {
+                var password = await secrets.GetSecretAsync(
+                    forJumpHost ? SshSecretKeys.JumpPassword(session.Id) : SshSecretKeys.Password(session.Id),
+                    cancellationToken);
+                if (string.IsNullOrEmpty(password))
+                {
+                    throw new InvalidOperationException(
+                        "Keyboard-interactive authentication requires a stored password for prompts. " +
+                        "Edit the session and save credentials.");
+                }
+
+                var kbd = new KeyboardInteractiveAuthenticationMethod(user);
+                kbd.AuthenticationPrompt += (_, e) =>
+                {
+                    foreach (var prompt in e.Prompts)
+                    {
+                        var request = prompt.Request ?? "";
+                        if (request.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+                            request.Contains("passphrase", StringComparison.OrdinalIgnoreCase) ||
+                            e.Prompts.Count == 1)
+                        {
+                            prompt.Response = password;
+                        }
+                    }
+                };
+                methods.Add(kbd);
                 break;
             }
             default:

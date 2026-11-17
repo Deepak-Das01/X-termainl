@@ -53,9 +53,9 @@ public class SshConnectionManagerTests
         var id = Guid.NewGuid();
         using var client1 = new SshClient("127.0.0.1", "u", "p");
         _ = manager.RegisterShell(id, client1, Rec(id));
-        using var client2 = new SshClient("10.0.0.1", "u", "p");
+        using var client2 = new SshClient("192.0.2.10", "u", "p");
         var other = Rec(id);
-        other.Host = "10.0.0.1";
+        other.Host = "192.0.2.10";
         Assert.Throws<InvalidOperationException>(() => manager.RegisterShell(id, client2, other));
     }
 
