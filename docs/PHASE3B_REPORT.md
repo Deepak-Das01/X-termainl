@@ -225,7 +225,7 @@ a running local process left running.
 
 ## 18. Git checkpoint hash
 
-**`d61d843`** — `Phase 3B: Professional SFTP transfers and remote file management`  
+**`014c86f`** — `Phase 3B: Professional SFTP transfers and remote file management`  
 (`main` ahead of origin by 2 with Phase 3A; not pushed.)
 
 ---

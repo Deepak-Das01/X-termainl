@@ -1468,10 +1468,14 @@ public sealed class SftpSessionService : IAsyncDisposable
                 ? $"{attrs.UserId}:{attrs.GroupId}"
                 : string.Empty;
 
+        // Permissions property is internal in SSH.NET — rebuild mode bits from public flags.
         short? modeBits = null;
         if (attrs is not null)
         {
             short m = 0;
+            if (attrs.IsUIDBitSet) m |= 0b100_000_000_000;
+            if (attrs.IsGroupIDBitSet) m |= 0b010_000_000_000;
+            if (attrs.IsStickyBitSet) m |= 0b001_000_000_000;
             if (attrs.OwnerCanRead) m |= 0b100_000_000;
             if (attrs.OwnerCanWrite) m |= 0b010_000_000;
             if (attrs.OwnerCanExecute) m |= 0b001_000_000;
