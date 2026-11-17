@@ -32,6 +32,12 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
     [ObservableProperty] private double _zoomFontSize;
     [ObservableProperty] private int? _latencyMs;
     [ObservableProperty] private int? _lastExitCode;
+    [ObservableProperty] private string? _lastCommandDurationLabel;
+    [ObservableProperty] private string _shellIntegrationStatus = "Disabled";
+    [ObservableProperty] private string? _trackedWorkingDirectory;
+    private bool _privateInputWasActive;
+    private string? _pendingIntegratedCommand;
+    private DateTimeOffset? _pendingCommandStartedUtc;
 
     public Guid Id { get; } = Guid.NewGuid();
     public SessionDefinition Definition { get; }
@@ -43,6 +49,7 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
 
     public event Action? Closed;
     public event Action? StatusChanged;
+    public event Action<TerminalTabViewModel, ShellIntegrationEvent>? ShellIntegrationEvent;
 
     public TerminalTabViewModel(SessionDefinition definition, SessionHostFactory factory)
     {
@@ -142,6 +149,13 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
     public void TogglePrivateInput()
     {
         PrivateInputMode = !PrivateInputMode;
+        if (PrivateInputMode)
+        {
+            _privateInputWasActive = true;
+            _pendingIntegratedCommand = null;
+            _pendingCommandStartedUtc = null;
+        }
+
         StatusChanged?.Invoke();
     }
 
@@ -164,7 +178,7 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
         _host.Resize((short)cols, (short)rows);
     }
 
-    /// <summary>Optional OSC 133 parsing — never executes local actions from terminal sequences.</summary>
+    /// <summary>Optional OSC parsing — never executes local actions from terminal sequences.</summary>
     public bool ShellIntegrationEnabled
     {
         get => _shellIntegration.Enabled;
@@ -175,6 +189,13 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
             {
                 _shellIntegration.Reset();
                 LastExitCode = null;
+                LastCommandDurationLabel = null;
+                ShellIntegrationStatus = "Disabled";
+            }
+            else
+            {
+                _shellIntegration.Reset();
+                ShellIntegrationStatus = "Detecting";
             }
         }
     }
@@ -213,19 +234,64 @@ public partial class TerminalTabViewModel : ObservableObject, IWorkspaceTab, IAs
     private void OnOutput(byte[] data)
     {
         var text = Encoding.UTF8.GetString(data);
-        if (_shellIntegration.Enabled && !PrivateInputMode)
+        if (_shellIntegration.Enabled)
         {
+            // Always parse to keep the buffer healthy, but suppress command-text side effects
+            // while Private Input is active or until a clean prompt after private input.
+            var suppressSensitive = PrivateInputMode || _privateInputWasActive;
             foreach (var ev in _shellIntegration.Push(text))
             {
+                ShellIntegrationStatus = _shellIntegration.State.ToString();
+                if (suppressSensitive &&
+                    ev.Kind is ShellIntegrationEventKind.CommandStarted or ShellIntegrationEventKind.CommandFinished)
+                {
+                    // Delayed finish events must not publish command text entered under Private Input.
+                    continue;
+                }
+
+                if (ev.Kind == ShellIntegrationEventKind.PromptStarted ||
+                    ev.Kind == ShellIntegrationEventKind.PromptCompleted)
+                {
+                    if (!PrivateInputMode)
+                        _privateInputWasActive = false;
+                }
+
+                if (ev.Kind == ShellIntegrationEventKind.CommandStarted)
+                {
+                    _pendingIntegratedCommand = ev.Command;
+                    _pendingCommandStartedUtc = ev.Utc;
+                }
+
                 if (ev.Kind == ShellIntegrationEventKind.CommandFinished)
+                {
                     LastExitCode = ev.ExitCode;
+                    LastCommandDurationLabel = ev.Duration is { } d
+                        ? (d.TotalSeconds >= 1 ? $"{d.TotalSeconds:0.#}s" : $"{d.TotalMilliseconds:0}ms")
+                        : null;
+                }
+
                 if (ev.Kind == ShellIntegrationEventKind.Directory &&
                     !string.IsNullOrWhiteSpace(ev.WorkingDirectory))
+                {
+                    TrackedWorkingDirectory = ev.WorkingDirectory;
                     Definition.WorkingDirectory = ev.WorkingDirectory;
+                }
+
+                ShellIntegrationEvent?.Invoke(this, ev);
+                StatusChanged?.Invoke();
             }
         }
 
         Emit(text);
+    }
+
+    public (string? Command, DateTimeOffset? StartedUtc) ConsumePendingIntegratedCommand()
+    {
+        var cmd = _pendingIntegratedCommand;
+        var started = _pendingCommandStartedUtc;
+        _pendingIntegratedCommand = null;
+        _pendingCommandStartedUtc = null;
+        return (cmd, started);
     }
 
     private void Emit(string text)

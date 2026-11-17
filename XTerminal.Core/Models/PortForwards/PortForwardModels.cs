@@ -29,6 +29,11 @@ public enum PortForwardRuntimeState
 {
     Stopped,
     Starting,
-    Active,
-    Error
+    Running,
+    Stopping,
+    Failed,
+    Disconnected,
+    // Legacy aliases kept for UI compatibility
+    Active = Running,
+    Error = Failed
 }

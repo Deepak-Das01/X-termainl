@@ -1,8 +1,8 @@
-# X-Terminal Phase 3B — Professional SFTP and Remote File Management
+﻿# X-Terminal Phase 3B — Professional SFTP and Remote File Management
 
 **Milestone:** Phase 3B  
 **Scope:** SFTP lifecycle, transfer queue/metrics/conflicts, remote file ops, chmod, remote editor hardening  
-**Base checkpoint:** Phase 3A `892d934`  
+**Base checkpoint:** Phase 3A `ab546a8`  
 **Date:** 2026-11-17
 
 ---
@@ -22,7 +22,7 @@ Phase 3B upgrades SFTP into a production-oriented transfer and remote file works
 | Item | Result |
 |------|--------|
 | Branch | `main` |
-| Phase 3A | `892d934` accepted |
+| Phase 3A | `ab546a8` accepted |
 | Running app | a running local XTerminal instance (not terminated) |
 | Build output | `_phase3b_out` (default bin locked) |
 | Phase 3A gate | **53/53** preserved |
@@ -225,7 +225,7 @@ a running local process left running.
 
 ## 18. Git checkpoint hash
 
-**`014c86f`** — `Phase 3B: Professional SFTP transfers and remote file management`  
+**`2995f04`** — `Phase 3B: Professional SFTP transfers and remote file management`  
 (`main` ahead of origin by 2 with Phase 3A; not pushed.)
 
 ---

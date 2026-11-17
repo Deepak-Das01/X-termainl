@@ -102,47 +102,20 @@ public partial class SessionsViewModel : ObservableObject
     public string? LastDiagnosticClipboard { get; private set; }
 
     [RelayCommand]
-    private async Task DiagnoseSessionAsync(SshSessionRecord? session)
+    private Task DiagnoseSessionAsync(SshSessionRecord? session)
     {
         session ??= SelectedSession;
-        if (session is null) return;
+        if (session is null) return Task.CompletedTask;
 
-        try
+        var window = new Views.DiagnosticsWindow(session, _secrets, _hostKeys)
         {
-            var tester = new SshConnectionTester(_secrets, _hostKeys);
-            var report = await tester.DiagnoseAsync(session);
-            LastDiagnosticClipboard = report.ToClipboardText();
-            var title = report.FailureKind == SshFailureKind.None
-                ? "Diagnostics — OK"
-                : $"Diagnostics — {report.FailureKind}";
-            var preview = string.Join(
-                Environment.NewLine,
-                report.Steps.Take(12).Select(s =>
-                    $"[{(s.Success ? "OK" : "FAIL")}] {s.Phase}: {s.Message}"));
-            var copy = System.Windows.MessageBox.Show(
-                $"{session.Name}\n{session.Username}@{session.Host}:{session.Port}\n" +
-                $"Auth: {session.AuthMethod}\nResult: {report.FailureKind}\n" +
-                $"Duration: {report.Duration?.TotalSeconds:0.##}s\n\n{preview}\n\n" +
-                "Copy full sanitized diagnostics to clipboard?",
-                title,
-                System.Windows.MessageBoxButton.YesNo,
-                report.FailureKind == SshFailureKind.None
-                    ? System.Windows.MessageBoxImage.Information
-                    : System.Windows.MessageBoxImage.Warning);
-            if (copy == System.Windows.MessageBoxResult.Yes)
-            {
-                try { System.Windows.Clipboard.SetText(LastDiagnosticClipboard); }
-                catch { /* ignore */ }
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Windows.MessageBox.Show(
-                SshConnectionDiagnosticReport.Sanitize(ex.Message),
-                "Diagnostics failed",
-                System.Windows.MessageBoxButton.OK,
-                System.Windows.MessageBoxImage.Error);
-        }
+            Owner = System.Windows.Application.Current?.MainWindow
+        };
+        window.ShowDialog();
+        if (window.DataContext is Views.DiagnosticsViewModel vm &&
+            !string.IsNullOrWhiteSpace(vm.ClipboardText))
+            LastDiagnosticClipboard = vm.ClipboardText;
+        return Task.CompletedTask;
     }
 
     public SshSessionRecord? FindSession(Guid id) =>

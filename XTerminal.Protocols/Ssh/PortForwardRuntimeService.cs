@@ -29,13 +29,29 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
     public string? GetError(Guid id) =>
         _active.TryGetValue(id, out var a) ? a.Error : null;
 
+    public DateTimeOffset? GetStartedUtc(Guid id) =>
+        _active.TryGetValue(id, out var a) ? a.StartedUtc : null;
+
+    public TimeSpan? GetUptime(Guid id) =>
+        _active.TryGetValue(id, out var a) && a.StartedUtc is { } s &&
+        a.State is PortForwardRuntimeState.Running or PortForwardRuntimeState.Active
+            ? DateTimeOffset.UtcNow - s
+            : null;
+
     public string GetTrafficLabel(Guid id) =>
-        _active.TryGetValue(id, out var a) && a.State == PortForwardRuntimeState.Active ? "open" : "—";
+        _active.TryGetValue(id, out var a) &&
+        a.State is PortForwardRuntimeState.Running or PortForwardRuntimeState.Active
+            ? "listener open"
+            : "N/A";
 
     public int GetConnections(Guid id) =>
-        _active.TryGetValue(id, out var a) && a.State == PortForwardRuntimeState.Active ? Math.Max(1, a.Connections) : 0;
+        // Approximate: listener up ≠ verified destination connectivity.
+        _active.TryGetValue(id, out var a) &&
+        a.State is PortForwardRuntimeState.Running or PortForwardRuntimeState.Active
+            ? Math.Max(1, a.Connections)
+            : 0;
 
-    /// <summary>SSH.NET does not expose per-forward byte counters; returns null.</summary>
+    /// <summary>SSH.NET does not expose trustworthy per-forward byte counters.</summary>
     public (long? Sent, long? Received) GetBytes(Guid id) => (null, null);
 
     public async Task StartAsync(PortForwardDefinition def, SshSessionRecord session, CancellationToken ct = default)
@@ -90,16 +106,19 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
             entry.Client = client;
             entry.Ownership = ownership;
             entry.Port = port;
-            entry.State = PortForwardRuntimeState.Active;
+            entry.State = PortForwardRuntimeState.Running;
             entry.Error = null;
             entry.SessionId = session.Id;
             entry.Reconnect = def.ReconnectWithSsh;
             entry.Connections = 1;
+            entry.StartedUtc = DateTimeOffset.UtcNow;
+            entry.LastTransitionUtc = entry.StartedUtc;
         }
         catch (Exception ex)
         {
-            entry.State = PortForwardRuntimeState.Error;
+            entry.State = PortForwardRuntimeState.Failed;
             entry.Error = Sanitize(ex.Message);
+            entry.LastTransitionUtc = DateTimeOffset.UtcNow;
             DisposeClient(entry.Client, entry.Ownership);
             entry.Client = null;
             entry.Ownership = null;
@@ -111,8 +130,12 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
 
     public Task StopAsync(Guid id)
     {
-        if (_active.TryRemove(id, out var entry))
+        if (_active.TryGetValue(id, out var entry))
         {
+            entry.State = PortForwardRuntimeState.Stopping;
+            entry.LastTransitionUtc = DateTimeOffset.UtcNow;
+            StateChanged?.Invoke();
+            _active.TryRemove(id, out _);
             try { entry.Port?.Stop(); } catch { /* ignore */ }
             try
             {
@@ -126,6 +149,7 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
             else
                 DisposeClient(entry.Client, entry.Ownership);
             entry.Lease = null;
+            entry.State = PortForwardRuntimeState.Stopped;
             StateChanged?.Invoke();
         }
 
@@ -136,10 +160,8 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
     {
         if (ownership is not null)
         {
-            try { ownership.Tunnel?.Stop(); } catch { /* ignore */ }
-            try { ownership.Tunnel?.Dispose(); } catch { /* ignore */ }
-            try { ownership.Jump?.Disconnect(); } catch { /* ignore */ }
-            try { ownership.Jump?.Dispose(); } catch { /* ignore */ }
+            try { ownership.Dispose(); } catch { /* ignore */ }
+            return;
         }
 
         if (client is null) return;
@@ -213,5 +235,7 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
         public bool UsesSharedConnection { get; set; }
         public SshConnectionLease? Lease { get; set; }
         public int Connections { get; set; }
+        public DateTimeOffset? StartedUtc { get; set; }
+        public DateTimeOffset? LastTransitionUtc { get; set; }
     }
 }

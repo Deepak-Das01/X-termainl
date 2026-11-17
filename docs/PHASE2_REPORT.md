@@ -1,4 +1,4 @@
-# X-Terminal Phase 2 — Implementation Report
+﻿# X-Terminal Phase 2 — Implementation Report
 
 ## 1. Executive summary
 

@@ -420,24 +420,42 @@
         <!-- Keybindings -->
         <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Keybindings}">
           <DockPanel Margin="0,0,0,10">
-            <Button DockPanel.Dock="Right" Style="{StaticResource CompactBtn}" Content="Restore defaults"
-                    Command="{Binding ResetAllKeybindingsCommand}" />
-            <TextBlock Text="Registered actions" FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+              <Button Style="{StaticResource CompactBtn}" Content="Record selected" Margin="0,0,6,0"
+                      Click="RecordKeybinding_OnClick"
+                      ToolTip="Click then press the desired shortcut" />
+              <Button Style="{StaticResource CompactBtn}" Content="Clear selected" Margin="0,0,6,0"
+                      Click="ClearKeybinding_OnClick" />
+              <Button Style="{StaticResource CompactBtn}" Content="Reset selected" Margin="0,0,6,0"
+                      Command="{Binding ResetKeybindingCommand}"
+                      CommandParameter="{Binding SelectedKeybinding}" />
+              <Button Style="{StaticResource CompactBtn}" Content="Restore defaults"
+                      Command="{Binding ResetAllKeybindingsCommand}" />
+            </StackPanel>
+            <TextBox Width="180" Margin="0,0,12,0" VerticalContentAlignment="Center" Padding="6,2"
+                     Text="{Binding KeybindingFilter, UpdateSourceTrigger=PropertyChanged}"
+                     ToolTip="Filter by action or shortcut" />
           </DockPanel>
-          <DataGrid ItemsSource="{Binding KeybindingRows}" AutoGenerateColumns="False" Height="360"
+          <TextBlock Text="{Binding KeybindingRecordHint}" FontSize="11" Margin="0,0,0,8"
+                     Foreground="{DynamicResource BrushAccent}" TextWrapping="Wrap" />
+          <DataGrid x:Name="KeybindingGrid" ItemsSource="{Binding FilteredKeybindingRows}"
+                    SelectedItem="{Binding SelectedKeybinding, Mode=TwoWay}"
+                    AutoGenerateColumns="False" Height="360"
                     Style="{StaticResource DesktopDataGrid}"
                     ColumnHeaderStyle="{StaticResource DesktopColumnHeader}"
                     RowStyle="{StaticResource DesktopDataGridRow}"
                     CellStyle="{StaticResource DesktopDataGridCell}"
-                    CanUserAddRows="False" HeadersVisibility="Column">
+                    CanUserAddRows="False" HeadersVisibility="Column"
+                    PreviewKeyDown="KeybindingGrid_OnPreviewKeyDown">
             <DataGrid.Columns>
               <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100" IsReadOnly="True" />
               <DataGridTextColumn Header="Command" Binding="{Binding Title}" Width="*" IsReadOnly="True" />
-              <DataGridTextColumn Header="Shortcut" Binding="{Binding Gesture, UpdateSourceTrigger=PropertyChanged}" Width="140" />
+              <DataGridTextColumn Header="Shortcut" Binding="{Binding Gesture}" Width="140" IsReadOnly="True" />
+              <DataGridTextColumn Header="Conflict" Binding="{Binding ConflictWith}" Width="120" IsReadOnly="True" />
             </DataGrid.Columns>
           </DataGrid>
-          <TextBlock Text="Conflicts are detected on save. Empty shortcut clears the override." FontSize="11"
-                     Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0" />
+          <TextBlock Text="Recording is active only after clicking Record selected. Terminal input is not captured here."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,8,0,0" TextWrapping="Wrap" />
         </StackPanel>
 
         <!-- Security -->
@@ -481,6 +499,42 @@
           <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,12"
                    Text="{Binding CurrentSettings.Advanced.MaxLogFiles, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
                    LostFocus="SettingsField_OnChanged" />
+          <CheckBox Content="Enable shell integration parsing (OSC 133 / OSC 7 / OSC 633 when shell emits it)" Margin="0,8,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.EnableShellIntegration}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Show command execution status in the status bar" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.ShowCommandExecutionStatus}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Show command duration in the status bar" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.ShowCommandDuration}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Track terminal working directory from shell integration" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.TrackTerminalWorkingDirectory}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Follow terminal working directory in SFTP (SSH sessions only)" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.FollowTerminalDirectoryInSftp}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Confirm before binding port forwards to non-loopback addresses" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.ConfirmNonLoopbackPortBinds}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Shell integration is advisory metadata from the remote shell. Install hooks only with explicit approval; X-Terminal never auto-edits remote shell rc files."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" TextWrapping="Wrap" />
+          <CheckBox Content="Restore workspace layout on startup" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.RestoreWorkspaceLayout}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <CheckBox Content="Auto-reconnect restored SSH sessions (explicit opt-in)" Margin="0,0,0,8"
+                    IsChecked="{Binding CurrentSettings.Advanced.AutoReconnectRestoredSessions}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="Workspace restore never persists terminal buffers or re-runs prior commands."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" TextWrapping="Wrap" />
           <TextBlock Text="Application data directory" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
           <TextBlock Text="{Binding AppDataDirectory}" FontSize="11" FontFamily="Consolas" TextWrapping="Wrap"
                      Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,8" />

@@ -49,6 +49,17 @@ public sealed class SshConnectionTester
                 : $"{session.ProxyJumpUsername ?? session.Username}@{session.ProxyJumpHost}:{ (session.ProxyJumpPort <= 0 ? 22 : session.ProxyJumpPort)}"
         };
 
+        if (string.IsNullOrWhiteSpace(session.Host) || string.IsNullOrWhiteSpace(session.Username))
+        {
+            report.FailureKind = SshFailureKind.InvalidConfiguration;
+            report.FailureMessage = "Host and username are required.";
+            report.Add("Profile", report.FailureMessage, success: false);
+            report.Duration = sw.Elapsed;
+            return report;
+        }
+
+        report.Add("Profile", $"Validated profile “{session.Name}” ({session.AuthMethod}).");
+
         var hops = JumpHostChain.FromSession(session);
         var hopErrors = JumpHostChain.Validate(hops, report.Host, report.Port);
         if (hopErrors.Count > 0)

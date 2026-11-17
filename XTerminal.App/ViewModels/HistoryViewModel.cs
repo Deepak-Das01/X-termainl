@@ -17,6 +17,7 @@ public partial class HistoryViewModel : ObservableObject
     [ObservableProperty] private string _rangeFilter = "30 Days";
     [ObservableProperty] private string _sourceFilter = "All";
     [ObservableProperty] private string _shellFilter = "All";
+    [ObservableProperty] private string _resultFilter = "All";
     [ObservableProperty] private HistoryEntry? _selectedEntry;
     [ObservableProperty] private bool _hasEntries;
     [ObservableProperty] private bool _historyEnabled = true;
@@ -25,6 +26,7 @@ public partial class HistoryViewModel : ObservableObject
     public IReadOnlyList<string> RangeFilters { get; } = ["Today", "7 Days", "30 Days", "All"];
     public IReadOnlyList<string> SourceFilters { get; } = ["All", "Local", "SSH"];
     public IReadOnlyList<string> ShellFilters { get; } = ["All", "PowerShell", "CMD", "WSL", "Bash", "SSH"];
+    public IReadOnlyList<string> ResultFilters { get; } = ["All", "Succeeded", "Failed", "Unknown"];
 
     public event Action<string, bool>? ApplyCommandRequested;
     public event Action<string>? CreateSnippetRequested;
@@ -124,6 +126,7 @@ public partial class HistoryViewModel : ObservableObject
     partial void OnRangeFilterChanged(string value) => Rebuild();
     partial void OnSourceFilterChanged(string value) => Rebuild();
     partial void OnShellFilterChanged(string value) => Rebuild();
+    partial void OnResultFilterChanged(string value) => Rebuild();
 
     private async Task PersistAsync()
     {
@@ -146,6 +149,9 @@ public partial class HistoryViewModel : ObservableObject
             if (ShellFilter != "All" &&
                 !(e.ShellType?.Contains(ShellFilter, StringComparison.OrdinalIgnoreCase) ?? false))
                 continue;
+            if (ResultFilter == "Succeeded" && e.ExitCode is not 0) continue;
+            if (ResultFilter == "Failed" && (e.ExitCode is null or 0)) continue;
+            if (ResultFilter == "Unknown" && e.ExitCode is not null) continue;
             if (!string.IsNullOrEmpty(query) &&
                 !(e.Command?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) &&
                 !(e.SessionName?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false) &&

@@ -53,7 +53,16 @@ Desktop.ini
 node_modules/
 tools/monaco-fetch/node_modules/
 
-## Temporary
+## Temporary / crash / exports
 *.tmp
 *.temp
 ~$*
+*.dmp
+*.stackdump
+**/session-export*.json
+**/transfers/
+**/tmp-transfers/
+
+## Local test servers (may contain secrets)
+**/test-server*.local.*
+**/local-ssh*.conf

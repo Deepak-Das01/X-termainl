@@ -86,11 +86,16 @@ public sealed class AdvancedAppSettings
 {
     public bool EnableFileLogging { get; set; } = true;
     public int MaxLogFiles { get; set; } = 14;
-    /// <summary>Parse OSC 133 shell-integration sequences when the shell emits them.</summary>
+    /// <summary>Parse OSC 7/133/633 shell-integration sequences when the shell emits them.</summary>
     public bool EnableShellIntegration { get; set; }
-    /// <summary>Restore tab layout on startup (never restores terminal buffers or auto-runs commands).</summary>
+    public bool ShowCommandExecutionStatus { get; set; } = true;
+    public bool ShowCommandDuration { get; set; } = true;
+    public bool TrackTerminalWorkingDirectory { get; set; } = true;
+    public bool FollowTerminalDirectoryInSftp { get; set; }
+    public bool ConfirmNonLoopbackPortBinds { get; set; } = true;
+    /// <summary>Restore tab layout on startup (never restores terminal buffers or auto-runs commands). Phase 3D.</summary>
     public bool RestoreWorkspaceLayout { get; set; } = true;
-    /// <summary>When true with RestoreWorkspaceLayout, attempt SSH reconnect for restored SSH tabs.</summary>
+    /// <summary>When true with RestoreWorkspaceLayout, attempt SSH reconnect for restored SSH tabs. Phase 3D.</summary>
     public bool AutoReconnectRestoredSessions { get; set; }
 }
 

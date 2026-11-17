@@ -1,6 +1,6 @@
 # X-Terminal
 
-**X-Terminal** is a premium, enterprise-focused Windows desktop workstation for local shells and remote SSH — combining capabilities inspired by Windows Terminal, Termius, and Visual Studio Code in one native WPF application.
+**X-Terminal** is a modern Windows terminal, secure remote administration and developer workspace featuring SSH, SFTP, integrated editing, advanced session management, networking tools and intelligent shell integration.
 
 > Repository: [Deepak-Das01/X-termainl](https://github.com/Deepak-Das01/X-termainl)
 
@@ -14,15 +14,22 @@ Built with **.NET 8**, **WPF (MVVM)**, **WebView2** (xterm.js + Monaco), **ConPT
 2. [Feature set](#feature-set)
 3. [Architecture](#architecture)
 4. [Requirements](#requirements)
-5. [How to start and stop](#how-to-start-and-stop)
-6. [Supported commands and shortcuts](#supported-commands-and-shortcuts)
-7. [Workspaces guide](#workspaces-guide)
-8. [Settings](#settings)
-9. [Security model](#security-model)
-10. [Application data](#application-data)
-11. [Development progress](#development-progress)
-12. [Build, test, and CI](#build-test-and-ci)
-13. [Limitations and roadmap](#limitations-and-roadmap)
+5. [Installation / getting started](#how-to-start-and-stop)
+6. [Local terminals](#local-terminals)
+7. [SSH authentication and jump hosts](#ssh-authentication-and-jump-hosts)
+8. [SFTP file management](#sftp-file-management)
+9. [Shell integration](#shell-integration)
+10. [Command history](#command-history)
+11. [Port forwarding](#port-forwarding)
+12. [Connection diagnostics](#connection-diagnostics)
+13. [Supported commands and shortcuts](#supported-commands-and-shortcuts)
+14. [Settings](#settings)
+15. [Security and privacy](#security-model)
+16. [Troubleshooting](#troubleshooting)
+17. [Known limitations](#limitations-and-roadmap)
+18. [Build from source](#build-test-and-ci)
+19. [Development progress](#development-progress)
+20. [Contributing / License](#license-and-acknowledgements)
 
 ---
 
@@ -82,10 +89,12 @@ X-Terminal is designed as a MobaXterm-class alternative for Windows operators wh
 
 | Capability | Details |
 |------------|---------|
-| Port forwards | Local / remote / dynamic; start/stop/restart; duplicate bind detection |
-| Byte counters | Shown as **N/A (SSH.NET)** — not fabricated |
+| Port forwards | Local / remote / dynamic SOCKS5; loopback default; LAN bind confirmation |
+| Tunnel metrics | State, uptime, listener status; byte counts **N/A (SSH.NET)** |
+| Connection diagnostics | Staged DNS → TCP → SSH/host-key/auth report (sanitized export) |
+| Shell integration | Optional OSC 7/133/633 parsing; per-pane status; never auto-edits shell rc |
 | Snippets | Library with insert/run into active terminal |
-| History | Enter-inferred commands; search/filter/copy/delete; privacy controls |
+| History | Enter-inferred + shell-integrated metadata; result/date filters; privacy controls |
 
 ### Application UX
 
@@ -160,8 +169,8 @@ dotnet build XTerminal.sln -c Release
 If the default `bin` folder is locked by a running instance, build to an alternate folder:
 
 ```powershell
-dotnet build XTerminal.App\XTerminal.App.csproj -c Release -o .\_phase2_out
-.\_phase2_out\XTerminal.exe
+dotnet build XTerminal.App\XTerminal.App.csproj -c Release -o .\_build_out
+.\_build_out\XTerminal.exe
 ```
 
 ### Stop the application
@@ -231,6 +240,9 @@ Open the **Command Palette** with `Ctrl+Shift+P` and type any command name. Shor
 | Broadcast: Selected Panes | — | Fan-out to marked targets |
 | Broadcast: Off | — | Disable broadcast |
 | Toggle Private Input Mode | — | Suppress history + broadcast for pane |
+| Show Shell Integration Status | — | Per-pane integration state |
+| Show Current Working Directory | — | Tracked CWD when available |
+| Copy Bash/PowerShell/Zsh Integration Snippet | — | Clipboard only — never auto-installs |
 | Reconnect | — | Reconnect active SSH/local host |
 
 ### SSH / Sessions
@@ -240,9 +252,12 @@ Open the **Command Palette** with `Ctrl+Shift+P` and type any command name. Shor
 | Quick Connect | — | SSH quick connect dialog |
 | Open Sessions | — | Sessions activity |
 | Open SFTP | — | SFTP workspace |
+| Show Connection Diagnostics | — | Staged SSH diagnostics dialog |
 | Export Sessions | — | JSON export (no secrets) |
 | Import Sessions | — | JSON import with conflict preview |
 | Reconnect | — | Reconnect active terminal |
+| Synchronize SFTP Directory | — | Navigate SFTP to terminal CWD |
+| Toggle SFTP Directory Following | — | Auto-follow shell CWD events |
 
 ### Editor / Files
 
@@ -258,11 +273,117 @@ Open the **Command Palette** with `Ctrl+Shift+P` and type any command name. Shor
 
 | Command | Shortcut | Description |
 |---------|----------|-------------|
-| New Forward | — | Create port forward |
-| Start / Stop Selected Forward | — | Control selected forward |
+| Create Port Forward | — | Create tunnel |
+| Start / Stop / Restart Selected Tunnel | — | Control selected forward |
 | Search History | — | History activity |
 | Clear Command History | — | Wipe stored history (confirms) |
 | Settings: General / Appearance / Terminal / SSH / Security / Keybindings | — | Jump to category |
+
+---
+
+## Local terminals
+
+Local profiles use ConPTY for PowerShell, CMD, and WSL. Split panes, broadcast, Private Input, and optional shell integration apply the same way as SSH panes. Working-directory tracking requires shell-emitted OSC sequences (see [Shell integration](#shell-integration)).
+
+---
+
+## SSH authentication and jump hosts
+
+| Topic | Behavior |
+|-------|----------|
+| Auth methods | Password, private key file path, agent/default-key fallback (not a full Pageant bridge) |
+| Host keys | Centralized verification; unknown/changed keys require explicit trust — diagnostics never auto-accept |
+| Jump hosts | Multi-hop ProxyJump with per-hop host-key checks where configured |
+| OpenSSH config | Partial import of `Host` / `HostName` / `User` / `Port` / `IdentityFile` / `ProxyJump` |
+| Keyboard-interactive | Supported for interactive auth prompts |
+
+Technical notes: [`docs/PHASE3A_REPORT.md`](docs/PHASE3A_REPORT.md).
+
+Example profile values for documentation:
+
+- Host: `server.example.com`
+- Bastion: `bastion.example.com`
+- Username: `username`
+
+---
+
+## SFTP file management
+
+- Browse, upload, download with a real transfer queue (progress, speed, ETA, cancel, retry)
+- Conflict policies, path-traversal protection, remote permission editing (including setuid/setgid/sticky)
+- Integrated remote editor with conflict detection
+- Drag-and-drop uploads and directory search
+- Optional **follow terminal working directory** when shell integration reports CWD for the **same** SSH session (debounced; never auto-transfers)
+
+Details: [`docs/PHASE3B_REPORT.md`](docs/PHASE3B_REPORT.md).
+
+---
+
+## Shell integration
+
+Optional, advisory metadata from Bash / PowerShell / Zsh when the shell emits OSC **7**, **133**, or **633**.
+
+| State | Meaning |
+|-------|---------|
+| Disabled | Parsing off |
+| Detecting | Waiting for first valid sequence |
+| Active | Receiving reliable events |
+| Degraded | Malformed/oversized input; terminal still works |
+| Unavailable | Host/shell cannot provide events |
+
+**Enable:** Settings → Advanced → Enable shell integration parsing.  
+**Install hooks:** use Command Palette → Copy … Integration Snippet, then paste into your shell config **only after you approve**. X-Terminal never rewrites remote `.*rc` / `$PROFILE` automatically.
+
+Full guide: [`docs/SHELL_INTEGRATION.md`](docs/SHELL_INTEGRATION.md).
+
+---
+
+## Command history
+
+- Legacy Enter-based capture and shell-integration finish events
+- Deduplication prefers shell-integration records when both fire
+- Filters: date range, local/SSH, shell type, result (Succeeded / Failed / Unknown)
+- Exit codes and durations are recorded **only** when shell integration provides them — never invented
+- Private Input suppresses all application capture, including delayed shell events carrying command text
+- Does **not** clear remote shell history or server audit logs
+
+---
+
+## Port forwarding
+
+Supports **local**, **remote**, and **dynamic SOCKS5** forwards via SSH.NET.
+
+- Defaults to **loopback** (`127.0.0.1`); non-loopback / LAN binds require explicit confirmation
+- Independent tunnel lifecycle with SSH lease awareness — closing a terminal tab does not always stop workspace tunnels
+- Byte counters remain **N/A** (SSH.NET does not expose trustworthy per-forward counters)
+
+Details: [`docs/PORT_FORWARDING.md`](docs/PORT_FORWARDING.md).
+
+---
+
+## Connection diagnostics
+
+From Sessions → Diagnose (or palette **Show Connection Diagnostics**):
+
+1. Profile validation  
+2. Hostname resolution  
+3. TCP connectivity  
+4. Jump-host progression (when configured)  
+5. SSH negotiation / authentication (respects host-key policy)  
+
+Exports are sanitized (no passwords/passphrases/keys). TCP success is not presented as SSH latency or a fake “connection quality” percentage.
+
+---
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---------|----------------|
+| Shell CWD / exit always N/A | Enable shell integration; install approved hooks; confirm OSC output |
+| SFTP does not follow terminal | Same SSH session; follow toggle on; reliable Directory events |
+| Tunnel bind fails | Port in use; loopback vs LAN confirmation; SSH session reachable |
+| Diagnostics DNS/TCP fail | Hostname, firewall, bastion path; jump direct-target probes may fail by design |
+| Host key rejected | Expected for unknown/changed keys until you trust via the normal prompt |
 
 ### Pane context menu (right-click terminal)
 
@@ -304,7 +425,7 @@ Rename · Pin/Unpin · Duplicate · Close · Close Others · Close to the Right 
 | **History** | Enable, retention, max entries, exclude SSH, exclude patterns |
 | **Keybindings** | Searchable action list, custom shortcuts, reset / restore defaults |
 | **Security** | Broadcast safety, known hosts list/remove, privacy notes |
-| **Advanced** | File logging, log retention, open AppData folder |
+| **Advanced** | Logging, shell integration, CWD tracking, SFTP follow, non-loopback bind confirm, AppData |
 | **About** | Version, runtime, dependencies, copy diagnostics |
 
 Nested options persist when you leave Settings, save, or change fields that call flush. Theme/material may require a restart on some Windows builds.
@@ -356,14 +477,21 @@ Use **Settings → Advanced → Open app data folder** to browse AppData.
 - GitHub Actions Windows CI  
 - Expanded regression tests (44 passing in Phase 2 validation)  
 
-### Phase 3 (planned)
+### Phase 3A — Advanced SSH
 
-- Shell integration for richer history / exit codes  
-- Stronger keybinding capture UX  
-- Jump-host and known-hosts editor polish  
-- End-to-end SFTP conflict policies  
-- Optional transport metrics if SSH.NET allows  
-- Remote protocols (RDP/VNC/etc.) only after dedicated security design  
+Jump hosts, keyboard-interactive auth, failure classification, OpenSSH config import (partial). See [`docs/PHASE3A_REPORT.md`](docs/PHASE3A_REPORT.md).
+
+### Phase 3B — Professional SFTP
+
+Transfer queue, conflict policies, permissions, remote editor, drag-and-drop. See [`docs/PHASE3B_REPORT.md`](docs/PHASE3B_REPORT.md).
+
+### Phase 3C — Shell integration, networking, diagnostics
+
+Optional OSC shell integration, terminal↔SFTP CWD sync, advanced port forwarding, connection diagnostics UI. See [`docs/PHASE3C_REPORT.md`](docs/PHASE3C_REPORT.md) and [`docs/SHELL_INTEGRATION.md`](docs/SHELL_INTEGRATION.md).
+
+### Phase 3D (planned)
+
+Workspace layout restore and keybinding recording UX (work in progress — not claimed complete).
 
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
@@ -380,10 +508,10 @@ dotnet build XTerminal.sln -c Release
 dotnet test XTerminal.Tests\XTerminal.Tests.csproj -c Release
 
 # If App bin is locked by a running XTerminal.exe:
-dotnet build XTerminal.App\XTerminal.App.csproj -c Release -o .\_phase2_out
-dotnet build XTerminal.Tests\XTerminal.Tests.csproj -c Release -o .\_phase2_out --no-dependencies
-dotnet test XTerminal.Tests\XTerminal.Tests.csproj -c Release -o .\_phase2_out --no-build
+dotnet build XTerminal.App\XTerminal.App.csproj -c Release -o .\_build_out
+dotnet test XTerminal.sln -c Release -o .\_build_out
 ```
+
 
 CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows runner, .NET 8, Release build + tests. No embedded secrets; no automatic GitHub Releases.
 
@@ -395,9 +523,13 @@ CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows 
 |-------|--------|
 | RDP / VNC / Telnet / Serial / X11 | Not implemented (gated stubs) |
 | Per-forward byte counters | Not available from SSH.NET — UI shows **N/A** |
-| Shell-integration exit codes | Not claimed; history is Enter-inferred |
+| Shell integration without hooks | Remains Detecting/Unavailable; terminal still works |
+| SSH agent / Pageant | Default-key fallback only — not a full agent bridge |
+| Independent jump-host credentials | Limited; see SSH backlog in Phase 3A/3C reports |
+| Per-forward byte / connection truth | Listener status only; bytes N/A |
 | Password echo masking | Not faked; Private Input documents real guarantees |
-| Live process restore across restarts | Not supported (by design) |
+| Live process / buffer restore | Not supported (by design) |
+| RDP / VNC / etc. | Explicitly out of scope until dedicated design |
 
 Contributions and issues: use the GitHub repository. Keep secrets out of commits — `.gitignore` excludes keys, `.env`, logs, WebView2 data, and build outputs.
 

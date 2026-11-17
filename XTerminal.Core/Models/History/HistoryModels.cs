@@ -22,4 +22,10 @@ public sealed class HistoryEntry
     public bool IsSsh { get; set; }
     /// <summary>ConPtyInferred | ShellIntegration | SshInferred</summary>
     public string CaptureSource { get; set; } = "ConPtyInferred";
+    public Guid? PaneId { get; set; }
+    public Guid? SessionId { get; set; }
+    public DateTimeOffset? StartedUtc { get; set; }
+    public DateTimeOffset? CompletedUtc { get; set; }
+    /// <summary>Only when shell integration provides start/finish; never fabricated.</summary>
+    public double? DurationMs { get; set; }
 }

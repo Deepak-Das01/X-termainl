@@ -23,6 +23,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ISettingsStore _settingsStore;
     private readonly SessionHostFactory _hostFactory;
     private readonly RemoteEditorFileService _remoteEditor = new();
+    private readonly IWorkspaceLayoutStore _workspaceLayout = new JsonWorkspaceLayoutStore();
     private bool _suppressPersist;
 
     [ObservableProperty] private IWorkspaceTab? _selectedTab;
@@ -75,9 +76,15 @@ public partial class MainViewModel : ObservableObject
 
     public AppSettings CurrentSettings { get; private set; } = new();
     public ObservableCollection<KeybindingRow> KeybindingRows { get; } = new();
+    public ObservableCollection<KeybindingRow> FilteredKeybindingRows { get; } = new();
     public ObservableCollection<ShellProfileSettings> ShellProfiles { get; } = new();
     public ObservableCollection<KnownHostRow> KnownHosts { get; } = new();
     public KeybindingService? Keybindings { get; private set; }
+
+    [ObservableProperty] private KeybindingRow? _selectedKeybinding;
+    [ObservableProperty] private string _keybindingFilter = "";
+    [ObservableProperty] private string _keybindingRecordHint = "";
+    [ObservableProperty] private bool _isRecordingKeybinding;
     public string AboutVersion =>
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
     public string AboutRuntime => $"{Environment.OSVersion} · .NET {Environment.Version}";
@@ -200,7 +207,11 @@ public partial class MainViewModel : ObservableObject
         var sessions = await sessionsTask;
         RebuildGroups(sessions);
 
-        if (settings.General.OpenDefaultShellOnStartup)
+        var restored = false;
+        if (settings.Advanced.RestoreWorkspaceLayout)
+            restored = await TryRestoreWorkspaceAsync(settings);
+
+        if (!restored && settings.General.OpenDefaultShellOnStartup)
         {
             var preferredShell = ResolveDefaultShellKind(settings);
             var local = sessions.FirstOrDefault(s => s.Kind == SessionKind.LocalShell && s.Shell == preferredShell)
@@ -654,12 +665,15 @@ public partial class MainViewModel : ObservableObject
         {
             SecuritySettings = CurrentSettings.Security
         };
+        foreach (var pane in group.AllPanes)
+            AttachShellIntegration(pane);
         group.StatusChanged += UpdateStatus;
         InsertTabOrdered(group);
         SelectedTab = group;
         await group.StartAsync();
         UpdateStatus();
         NotifyTabSelection();
+        _ = SaveWorkspaceLayoutAsync();
     }
 
     private void InsertTabOrdered(IWorkspaceTab tab)
@@ -726,7 +740,11 @@ public partial class MainViewModel : ObservableObject
                 return;
             }
 
+            _remoteEditor.MaxBytes = Math.Max(64_000, CurrentSettings.Files.MaxEditorFileBytes);
             var session = await _remoteEditor.OpenAsync(Sftp.Service, remotePath);
+            // Bind tab to the active SFTP session id/host — never open against a different connection by path alone.
+            if (Sftp.ActiveSessionId is Guid sid && session.SessionId != sid)
+                throw new InvalidOperationException("Remote editor session mismatch.");
             ActiveSection = ActivitySection.Terminal;
             RefreshActivitySelection();
             AddEditorTab(EditorTabViewModel.CreateRemote(session));
@@ -760,15 +778,40 @@ public partial class MainViewModel : ObservableObject
                 }
                 catch (RemoteEditConflictException conflict)
                 {
-                    var result = MessageBox.Show(
-                        conflict.Message + "\n\nOverwrite the remote file?",
+                    var choice = MessageBox.Show(
+                        conflict.Message +
+                        "\n\nYes = Overwrite remote\nNo = Reload remote (discard local edits)\nCancel = keep editing / save a local copy next",
                         "Remote conflict",
-                        MessageBoxButton.YesNo,
+                        MessageBoxButton.YesNoCancel,
                         MessageBoxImage.Warning);
-                    if (result != MessageBoxResult.Yes) return false;
-                    await _remoteEditor.UploadAtomicAsync(Sftp.Service, tab.Remote, tab.Content, overwriteConflict: true);
-                    tab.MarkRemoteSaved(tab.Remote);
-                    return true;
+                    if (choice == MessageBoxResult.Yes)
+                    {
+                        await _remoteEditor.UploadAtomicAsync(Sftp.Service, tab.Remote, tab.Content, overwriteConflict: true);
+                        tab.MarkRemoteSaved(tab.Remote);
+                        return true;
+                    }
+
+                    if (choice == MessageBoxResult.No)
+                    {
+                        await _remoteEditor.ReloadAsync(Sftp.Service, tab.Remote);
+                        tab.LoadContent(tab.Remote.Content, markClean: true);
+                        tab.StatusMessage = "Reloaded from remote";
+                        return false;
+                    }
+
+                    var dlg = new SaveFileDialog
+                    {
+                        Title = "Save a local copy",
+                        FileName = Path.GetFileName(tab.Remote.RemotePath),
+                        Filter = "All files|*.*"
+                    };
+                    if (dlg.ShowDialog() == true)
+                    {
+                        await File.WriteAllTextAsync(dlg.FileName, tab.Content, new UTF8Encoding(false));
+                        tab.StatusMessage = "Saved local copy";
+                    }
+
+                    return false;
                 }
             }
 
@@ -913,11 +956,26 @@ public partial class MainViewModel : ObservableObject
         {
             StatusShell = terminal.Title;
             StatusConnection = terminal.Status;
-            StatusDirectory = terminal.Definition.WorkingDirectory ?? Environment.CurrentDirectory;
+            if (CurrentSettings.Advanced.ShowCommandExecutionStatus && terminal.LastExitCode is int code)
+                StatusConnection = $"{StatusConnection} · exit {code}";
+            if (CurrentSettings.Advanced.ShowCommandDuration &&
+                !string.IsNullOrWhiteSpace(terminal.LastCommandDurationLabel))
+                StatusConnection = $"{StatusConnection} · {terminal.LastCommandDurationLabel}";
+            StatusDirectory = terminal.TrackedWorkingDirectory
+                              ?? terminal.Definition.WorkingDirectory
+                              ?? Environment.CurrentDirectory;
+            if (CurrentSettings.Advanced.EnableShellIntegration)
+                StatusShell = $"{terminal.Title} · {terminal.ShellIntegrationStatus}";
             StatusEncoding = "UTF-8";
             StatusTerminalType = terminal.Definition.Kind == SessionKind.Ssh ? "ssh / xterm-256color" : "xterm-256color";
             StatusHost = terminal.RemoteHost ?? terminal.Definition.Host ?? "local";
             StatusUser = terminal.RemoteUser ?? terminal.Definition.Username ?? Environment.UserName;
+            if (!string.IsNullOrWhiteSpace(terminal.AuthMethodLabel))
+                StatusUser = $"{StatusUser} · {terminal.AuthMethodLabel}";
+            if (!string.IsNullOrWhiteSpace(terminal.ConnectionDurationLabel))
+                StatusConnection = $"{StatusConnection} · {terminal.ConnectionDurationLabel}";
+            if (terminal.LastExitCode is int exit)
+                StatusTerminalType = $"{StatusTerminalType} · exit {exit}";
             if (group.PaneCount > 1)
                 StatusTerminalType = $"Pane {group.PaneIndex}/{group.PaneCount}";
             if (group.BroadcastEnabled)
@@ -930,6 +988,118 @@ public partial class MainViewModel : ObservableObject
 
         OnPropertyChanged(nameof(ShowCancelConnect));
         OnPropertyChanged(nameof(ShowReconnect));
+    }
+
+    private async Task SaveWorkspaceLayoutAsync()
+    {
+        if (!CurrentSettings.Advanced.RestoreWorkspaceLayout) return;
+        try
+        {
+            var doc = new Core.Models.Ui.WorkspaceLayoutDocument
+            {
+                RestoreEnabled = CurrentSettings.Advanced.RestoreWorkspaceLayout,
+                AutoReconnectRemote = CurrentSettings.Advanced.AutoReconnectRestoredSessions,
+                ActiveSection = ActiveSection.ToString(),
+                LocalFilesPath = Files.PathText
+            };
+
+            foreach (var tab in Tabs)
+            {
+                if (tab is TerminalGroupTabViewModel g && g.ActivePane is { } pane)
+                {
+                    doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
+                    {
+                        Kind = "terminal",
+                        Title = g.Title,
+                        IsPinned = g.IsPinned,
+                        SshSessionId = pane.Definition.SshSessionId,
+                        LocalShell = pane.Definition.Kind == SessionKind.LocalShell
+                            ? pane.Definition.Shell.ToString()
+                            : null,
+                        WorkingDirectory = pane.Definition.WorkingDirectory
+                    });
+                }
+                else if (tab is EditorTabViewModel ed)
+                {
+                    doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
+                    {
+                        Kind = "editor",
+                        Title = ed.Title,
+                        IsPinned = ed.IsPinned,
+                        EditorPath = ed.LocalPath,
+                        EditorIsRemote = ed.Kind == EditorDocumentKind.RemoteSftp
+                    });
+                }
+            }
+
+            await _workspaceLayout.SaveAsync(doc);
+        }
+        catch
+        {
+            // never block UX on layout persistence
+        }
+    }
+
+    /// <summary>
+    /// Restores tab metadata only — never terminal buffers or automatic command replay.
+    /// SSH reconnect requires explicit AutoReconnectRestoredSessions.
+    /// </summary>
+    private async Task<bool> TryRestoreWorkspaceAsync(AppSettings settings)
+    {
+        try
+        {
+            var doc = await _workspaceLayout.LoadAsync();
+            if (!doc.RestoreEnabled || doc.Tabs.Count == 0)
+                return false;
+
+            var opened = 0;
+            foreach (var tab in doc.Tabs.Take(12))
+            {
+                if (tab.Kind == "editor" && !string.IsNullOrWhiteSpace(tab.EditorPath) && !tab.EditorIsRemote &&
+                    File.Exists(tab.EditorPath))
+                {
+                    await OpenLocalPathAsync(tab.EditorPath);
+                    opened++;
+                    continue;
+                }
+
+                if (tab.Kind != "terminal") continue;
+
+                if (tab.SshSessionId is Guid sid && settings.Advanced.AutoReconnectRestoredSessions)
+                {
+                    var record = Sessions.FindSession(sid);
+                    if (record is not null)
+                    {
+                        await ConnectSshAsync(record);
+                        opened++;
+                        continue;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(tab.LocalShell) &&
+                    Enum.TryParse<ShellKind>(tab.LocalShell, true, out var shell))
+                {
+                    await OpenSessionCoreAsync(new SessionDefinition
+                    {
+                        Name = string.IsNullOrWhiteSpace(tab.Title) ? shell.ToString() : tab.Title,
+                        Kind = SessionKind.LocalShell,
+                        Shell = shell,
+                        Group = "Local",
+                        WorkingDirectory = tab.WorkingDirectory
+                    });
+                    opened++;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(doc.LocalFilesPath) && Directory.Exists(doc.LocalFilesPath))
+                await Files.NavigateToPathAsync(doc.LocalFilesPath);
+
+            return opened > 0;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private void ApplySettingsToUi(AppSettings settings)
@@ -971,8 +1141,55 @@ public partial class MainViewModel : ObservableObject
         AppLog.Configure(settings.Advanced.EnableFileLogging, settings.Advanced.MaxLogFiles);
         Files.ApplyFilesSettings(settings.Files);
         Sftp.ApplyFilesSettings(settings.Files);
+        ApplyShellIntegrationSetting(settings.Advanced.EnableShellIntegration);
+        Sftp.SetFollowTerminalDirectory(settings.Advanced.FollowTerminalDirectoryInSftp);
         SyncCommandShortcuts();
         OnPropertyChanged(nameof(CurrentSettings));
+    }
+
+    private void ApplyShellIntegrationSetting(bool enabled)
+    {
+        foreach (var group in Tabs.OfType<TerminalGroupTabViewModel>())
+        {
+            foreach (var pane in group.AllPanes)
+            {
+                pane.ShellIntegrationEnabled = enabled;
+                AttachShellIntegration(pane);
+            }
+        }
+    }
+
+    private void AttachShellIntegration(TerminalTabViewModel pane)
+    {
+        pane.ShellIntegrationEnabled = CurrentSettings.Advanced.EnableShellIntegration;
+        pane.ShellIntegrationEvent -= OnPaneShellIntegrationEvent;
+        pane.ShellIntegrationEvent += OnPaneShellIntegrationEvent;
+    }
+
+    private void OnPaneShellIntegrationEvent(TerminalTabViewModel pane, ShellIntegrationEvent ev)
+    {
+        HistoryTracker.OnShellIntegrationEvent(pane, ev);
+
+        if (ev.Kind != ShellIntegrationEventKind.Directory) return;
+        if (!CurrentSettings.Advanced.FollowTerminalDirectoryInSftp) return;
+        if (!CurrentSettings.Advanced.TrackTerminalWorkingDirectory) return;
+        if (!Sftp.IsConnected || Sftp.ActiveSessionId is null) return;
+        if (pane.Definition.SshSessionId is not Guid sid) return;
+
+        if (!Sftp.TryAcceptTerminalDirectory(sid, ev.WorkingDirectory, out var path, out _))
+            return;
+
+        _ = Application.Current?.Dispatcher.InvokeAsync(async () =>
+        {
+            try
+            {
+                await Sftp.NavigateToRemoteDirectoryAsync(path);
+            }
+            catch
+            {
+                // Ignore unavailable paths / disconnected SFTP.
+            }
+        });
     }
 
     private AppSettings BuildSettings()
@@ -1032,16 +1249,106 @@ public partial class MainViewModel : ObservableObject
         KeybindingRows.Clear();
         if (Keybindings is null) return;
         SyncCommandShortcuts();
+        var conflicts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var c in Keybindings.DetectConflicts())
+        {
+            conflicts[c.CommandIdA] = c.CommandIdB;
+            conflicts[c.CommandIdB] = c.CommandIdA;
+        }
         foreach (var cmd in Commands.Commands.OrderBy(c => c.Category).ThenBy(c => c.Title))
         {
+            conflicts.TryGetValue(cmd.Id, out var other);
             KeybindingRows.Add(new KeybindingRow
             {
                 CommandId = cmd.Id,
                 Title = cmd.Title,
                 Category = cmd.Category.ToString(),
-                Gesture = Keybindings.GetGesture(cmd.Id)
+                Gesture = Keybindings.GetGesture(cmd.Id),
+                ConflictWith = other ?? ""
             });
         }
+
+        ApplyKeybindingFilter();
+    }
+
+    partial void OnKeybindingFilterChanged(string value) => ApplyKeybindingFilter();
+
+    private void ApplyKeybindingFilter()
+    {
+        FilteredKeybindingRows.Clear();
+        var q = KeybindingFilter?.Trim() ?? "";
+        foreach (var row in KeybindingRows)
+        {
+            if (string.IsNullOrEmpty(q) ||
+                row.Title.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                row.Category.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                row.Gesture.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                row.CommandId.Contains(q, StringComparison.OrdinalIgnoreCase))
+            {
+                FilteredKeybindingRows.Add(row);
+            }
+        }
+    }
+
+    public void BeginKeybindingRecord()
+    {
+        if (SelectedKeybinding is null)
+        {
+            KeybindingRecordHint = "Select a command row first, then click Record.";
+            return;
+        }
+
+        IsRecordingKeybinding = true;
+        KeybindingRecordHint = $"Recording for “{SelectedKeybinding.Title}” — press the shortcut now (Esc cancels).";
+    }
+
+    public void CancelKeybindingRecord()
+    {
+        IsRecordingKeybinding = false;
+        KeybindingRecordHint = "";
+    }
+
+    public bool TryCompleteKeybindingRecord(System.Windows.Input.Key key, System.Windows.Input.ModifierKeys modifiers)
+    {
+        if (!IsRecordingKeybinding || SelectedKeybinding is null || Keybindings is null)
+            return false;
+
+        if (key is System.Windows.Input.Key.Escape)
+        {
+            CancelKeybindingRecord();
+            return true;
+        }
+
+        if (key is System.Windows.Input.Key.LeftCtrl or System.Windows.Input.Key.RightCtrl
+            or System.Windows.Input.Key.LeftAlt or System.Windows.Input.Key.RightAlt
+            or System.Windows.Input.Key.LeftShift or System.Windows.Input.Key.RightShift
+            or System.Windows.Input.Key.LWin or System.Windows.Input.Key.RWin)
+            return true;
+
+        var gesture = KeybindingService.ToGesture(key, modifiers);
+        if (gesture is "Ctrl+Shift+P" or "Alt+F4" or "Ctrl+Alt+Delete")
+        {
+            KeybindingRecordHint = $"“{gesture}” is reserved and cannot be assigned.";
+            return true;
+        }
+
+        Keybindings.SetGesture(SelectedKeybinding.CommandId, gesture);
+        SelectedKeybinding.Gesture = gesture;
+        IsRecordingKeybinding = false;
+        KeybindingRecordHint = $"Assigned {gesture} to {SelectedKeybinding.Title}.";
+        RefreshKeybindingRows();
+        SelectedKeybinding = FilteredKeybindingRows.FirstOrDefault(r => r.CommandId == SelectedKeybinding.CommandId);
+        _ = PersistAsync();
+        return true;
+    }
+
+    public void ClearSelectedKeybinding()
+    {
+        if (SelectedKeybinding is null || Keybindings is null) return;
+        Keybindings.SetGesture(SelectedKeybinding.CommandId, "");
+        SelectedKeybinding.Gesture = "";
+        RefreshKeybindingRows();
+        _ = PersistAsync();
     }
 
     private void SyncCommandShortcuts()
@@ -1095,10 +1402,19 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void CopyDiagnostics()
     {
-        var text =
-            $"X-Terminal {AboutVersion}\n{AboutRuntime}\nAppData: {AppDataDirectory}\n" +
-            $"Tabs: {Tabs.Count}\nTheme: {ThemeMode}\n";
-        try { Clipboard.SetText(text); } catch { /* ignore */ }
+        var sb = new StringBuilder();
+        sb.AppendLine($"X-Terminal {AboutVersion}");
+        sb.AppendLine(AboutRuntime);
+        sb.AppendLine($"AppData: {AppDataDirectory}");
+        sb.AppendLine($"Tabs: {Tabs.Count}");
+        sb.AppendLine($"Theme: {ThemeMode}");
+        if (!string.IsNullOrWhiteSpace(Sessions.LastDiagnosticClipboard))
+        {
+            sb.AppendLine("--- Last SSH diagnostics ---");
+            sb.AppendLine(Sessions.LastDiagnosticClipboard);
+        }
+
+        try { Clipboard.SetText(sb.ToString()); } catch { /* ignore */ }
         Notifications.Show("Diagnostics", "Copied non-sensitive diagnostic text.");
     }
 
@@ -1352,6 +1668,112 @@ public partial class MainViewModel : ObservableObject
         UpdateStatus();
     }
 
+    private void ShowShellIntegrationStatus()
+    {
+        var pane = SelectedTerminalTab;
+        if (pane is null) return;
+        MessageBox.Show(
+            $"Pane: {pane.Title}\n" +
+            $"Integration: {pane.ShellIntegrationStatus}\n" +
+            $"Enabled setting: {CurrentSettings.Advanced.EnableShellIntegration}\n" +
+            $"Working directory: {pane.TrackedWorkingDirectory ?? pane.Definition.WorkingDirectory ?? "N/A"}\n" +
+            $"Last exit: {pane.LastExitCode?.ToString() ?? "N/A"}\n" +
+            $"Last duration: {pane.LastCommandDurationLabel ?? "N/A"}\n\n" +
+            "Metadata is advisory. Hooks are never installed automatically.",
+            "Shell integration",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private void ShowCurrentWorkingDirectory()
+    {
+        var pane = SelectedTerminalTab;
+        if (pane is null) return;
+        var cwd = pane.TrackedWorkingDirectory ?? pane.Definition.WorkingDirectory ?? "N/A";
+        MessageBox.Show(
+            cwd,
+            "Current working directory",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private void CopyShellHookSnippet(string shell)
+    {
+        var confirm = MessageBox.Show(
+            $"Copy the optional {shell} shell-integration snippet to the clipboard?\n\n" +
+            "X-Terminal will not edit remote shell configuration files. " +
+            "Paste the snippet yourself only if you approve the change.",
+            "Shell integration snippet",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes) return;
+        try
+        {
+            Clipboard.SetText(ShellIntegrationHooks.GetSnippet(shell));
+        }
+        catch
+        {
+            MessageBox.Show("Could not access the clipboard.", "Shell integration", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private void ToggleSftpDirectoryFollow()
+    {
+        CurrentSettings.Advanced.FollowTerminalDirectoryInSftp =
+            !CurrentSettings.Advanced.FollowTerminalDirectoryInSftp;
+        Sftp.SetFollowTerminalDirectory(CurrentSettings.Advanced.FollowTerminalDirectoryInSftp);
+        FlushNestedSettings();
+        MessageBox.Show(
+            CurrentSettings.Advanced.FollowTerminalDirectoryInSftp
+                ? "SFTP will follow the terminal working directory when shell integration reports it (same SSH session only)."
+                : "SFTP directory following is disabled. Manual browsing is unchanged.",
+            "SFTP directory following",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private void SyncSftpToTerminalDirectory()
+    {
+        var pane = SelectedTerminalTab;
+        if (pane is null || !Sftp.IsConnected) return;
+        if (pane.Definition.SshSessionId is not Guid sid)
+        {
+            MessageBox.Show("The active pane is not an SSH session.", "Synchronize SFTP", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var path = pane.TrackedWorkingDirectory ?? pane.Definition.WorkingDirectory;
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            MessageBox.Show(
+                "No reliable working directory is available. Enable shell integration and ensure the shell emits OSC 7 / OSC 633 Cwd.",
+                "Synchronize SFTP",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        if (Sftp.ActiveSessionId != sid)
+        {
+            MessageBox.Show(
+                "Terminal and SFTP sessions do not match.",
+                "Synchronize SFTP",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            var normalized = SftpPathSafety.NormalizeRemote(path);
+            _ = Sftp.NavigateToRemoteDirectoryAsync(normalized);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Synchronize SFTP", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     [RelayCommand]
     private void OpenCommandPalette()
     {
@@ -1476,9 +1898,18 @@ public partial class MainViewModel : ObservableObject
             new AppCommand { Id = "editor.open", Title = "Open File", Category = CommandCategory.Editor, Shortcut = "Ctrl+O", Execute = () => _ = OpenLocalFileAsync() },
             new AppCommand { Id = "editor.save", Title = "Save", Category = CommandCategory.Editor, Shortcut = "Ctrl+S", Execute = () => _ = SaveEditorAsync() },
             new AppCommand { Id = "editor.saveAs", Title = "Save As", Category = CommandCategory.Editor, Shortcut = "Ctrl+Shift+S", Execute = () => _ = SaveEditorAsAsync() },
-            new AppCommand { Id = "ports.new", Title = "New Forward", Category = CommandCategory.Ports, Execute = () => _ = Ports.NewForwardCommand.ExecuteAsync(null) },
-            new AppCommand { Id = "ports.start", Title = "Start Selected Forward", Category = CommandCategory.Ports, Execute = () => _ = Ports.StartCommand.ExecuteAsync(Ports.SelectedForward), CanExecute = () => Ports.SelectedForward is not null },
-            new AppCommand { Id = "ports.stop", Title = "Stop Selected Forward", Category = CommandCategory.Ports, Execute = () => _ = Ports.StopCommand.ExecuteAsync(Ports.SelectedForward), CanExecute = () => Ports.SelectedForward is not null },
+            new AppCommand { Id = "shell.integrationStatus", Title = "Show Shell Integration Status", Category = CommandCategory.Terminal, Execute = ShowShellIntegrationStatus, CanExecute = () => SelectedTerminalTab is not null },
+            new AppCommand { Id = "shell.showCwd", Title = "Show Current Working Directory", Category = CommandCategory.Terminal, Execute = ShowCurrentWorkingDirectory, CanExecute = () => SelectedTerminalTab is not null },
+            new AppCommand { Id = "shell.copyBashHooks", Title = "Copy Bash Shell Integration Snippet", Category = CommandCategory.Terminal, Execute = () => CopyShellHookSnippet("bash") },
+            new AppCommand { Id = "shell.copyPwshHooks", Title = "Copy PowerShell Shell Integration Snippet", Category = CommandCategory.Terminal, Execute = () => CopyShellHookSnippet("pwsh") },
+            new AppCommand { Id = "shell.copyZshHooks", Title = "Copy Zsh Shell Integration Snippet", Category = CommandCategory.Terminal, Execute = () => CopyShellHookSnippet("zsh") },
+            new AppCommand { Id = "ssh.diagnostics", Title = "Show Connection Diagnostics", Category = CommandCategory.Ssh, Execute = () => _ = Sessions.DiagnoseSessionCommand.ExecuteAsync(Sessions.SelectedSession), CanExecute = () => Sessions.SelectedSession is not null },
+            new AppCommand { Id = "sftp.syncDirectory", Title = "Synchronize SFTP Directory", Category = CommandCategory.Sftp, Execute = SyncSftpToTerminalDirectory, CanExecute = () => SelectedTerminalTab is not null && Sftp.IsConnected },
+            new AppCommand { Id = "sftp.toggleFollow", Title = "Toggle SFTP Directory Following", Category = CommandCategory.Sftp, Execute = ToggleSftpDirectoryFollow },
+            new AppCommand { Id = "ports.new", Title = "Create Port Forward", Category = CommandCategory.Ports, Execute = () => _ = Ports.NewForwardCommand.ExecuteAsync(null) },
+            new AppCommand { Id = "ports.start", Title = "Start Selected Tunnel", Category = CommandCategory.Ports, Execute = () => _ = Ports.StartCommand.ExecuteAsync(Ports.SelectedForward), CanExecute = () => Ports.SelectedForward is not null },
+            new AppCommand { Id = "ports.stop", Title = "Stop Selected Tunnel", Category = CommandCategory.Ports, Execute = () => _ = Ports.StopCommand.ExecuteAsync(Ports.SelectedForward), CanExecute = () => Ports.SelectedForward is not null },
+            new AppCommand { Id = "ports.restart", Title = "Restart Selected Tunnel", Category = CommandCategory.Ports, Execute = () => _ = Ports.RestartCommand.ExecuteAsync(Ports.SelectedForward), CanExecute = () => Ports.SelectedForward is not null },
             new AppCommand { Id = "snippets.insert", Title = "Insert Snippet", Category = CommandCategory.Snippets, Shortcut = "Ctrl+Shift+I", Execute = () => SelectActivity(Activities.First(a => a.Section == ActivitySection.Snippets)) },
             new AppCommand { Id = "history.search", Title = "Search History", Category = CommandCategory.History, Execute = () => SelectActivity(Activities.First(a => a.Section == ActivitySection.History)) },
             new AppCommand { Id = "history.clear", Title = "Clear Command History", Category = CommandCategory.History, Execute = () => _ = History.ClearCommand.ExecuteAsync(null) },
@@ -1577,6 +2008,12 @@ public sealed class KeybindingRow : ObservableObject
     {
         get => _gesture;
         set => SetProperty(ref _gesture, value);
+    }
+    private string _conflictWith = "";
+    public string ConflictWith
+    {
+        get => _conflictWith;
+        set => SetProperty(ref _conflictWith, value);
     }
 }
 

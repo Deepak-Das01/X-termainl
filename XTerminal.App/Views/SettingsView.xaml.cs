@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using XTerminal.App.ViewModels;
 using XTerminal.Core.Settings;
 
@@ -26,6 +27,19 @@ public partial class SettingsView : UserControl
 
     private void SettingsField_OnChanged(object sender, RoutedEventArgs e) =>
         Vm?.FlushNestedSettings();
+
+    private void RecordKeybinding_OnClick(object sender, RoutedEventArgs e) =>
+        Vm?.BeginKeybindingRecord();
+
+    private void ClearKeybinding_OnClick(object sender, RoutedEventArgs e) =>
+        Vm?.ClearSelectedKeybinding();
+
+    private void KeybindingGrid_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (Vm?.IsRecordingKeybinding != true) return;
+        if (Vm.TryCompleteKeybindingRecord(e.Key, Keyboard.Modifiers))
+            e.Handled = true;
+    }
 
     private void SetTheme(AppThemeMode mode)
     {

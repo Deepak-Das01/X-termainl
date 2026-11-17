@@ -35,6 +35,8 @@ public partial class SftpWorkspaceViewModel : ObservableObject
     [ObservableProperty] private bool _hasTransfers;
     [ObservableProperty] private string _entryFilter = string.Empty;
     [ObservableProperty] private string _queueProgressText = "";
+    [ObservableProperty] private bool _followTerminalDirectory;
+    private readonly SftpDirectorySync _cwdSync = new();
 
     public ObservableCollection<SftpEntryViewModel> Entries { get; } = new();
     private readonly List<SftpEntryViewModel> _allEntries = new();
@@ -64,6 +66,28 @@ public partial class SftpWorkspaceViewModel : ObservableObject
         _stickyConflictAction = null;
         _ = RefreshAsync();
     }
+
+    public void SetFollowTerminalDirectory(bool enabled)
+    {
+        FollowTerminalDirectory = enabled;
+        _cwdSync.FollowTerminalDirectory = enabled;
+        if (!enabled) _cwdSync.Reset();
+    }
+
+    /// <summary>Navigate SFTP to a validated remote path (used by shell CWD sync).</summary>
+    public Task NavigateToRemoteDirectoryAsync(string path) =>
+        NavigateToAsync(path, pushHistory: true);
+
+    /// <summary>
+    /// Evaluate whether a terminal CWD event should navigate this SFTP workspace.
+    /// Never starts transfers; path must still exist for NavigateTo to succeed.
+    /// </summary>
+    public bool TryAcceptTerminalDirectory(
+        Guid terminalSshSessionId,
+        string? proposedPath,
+        out string normalizedPath,
+        out string? rejectReason) =>
+        _cwdSync.ShouldNavigate(terminalSshSessionId, ActiveSessionId, proposedPath, out normalizedPath, out rejectReason);
 
     private static TransferConflictAction MapConflictBehavior(string? behavior) =>
         behavior?.Trim() switch
@@ -407,9 +431,12 @@ public partial class SftpWorkspaceViewModel : ObservableObject
 
         try
         {
-            await _service.SetPermissionsAsync(SelectedEntry.FullPath, dlg.ResultBits.ToMode());
+            var mode = SelectedEntry.ModeBits is { } existing
+                ? dlg.ResultBits.ToModePreservingSpecial(existing)
+                : dlg.ResultBits.ToMode();
+            await _service.SetPermissionsAsync(SelectedEntry.FullPath, mode);
             await RefreshAsync();
-            StatusText = $"Permissions set to {dlg.ResultBits.ToOctal():D3} ({dlg.ResultBits.ToSymbolic()})";
+            StatusText = $"Permissions set to {dlg.ResultBits.ToOctal():D3} ({dlg.ResultBits.ToSymbolic()}) — special bits preserved when present.";
         }
         catch (Exception ex) { ErrorBanner = Sanitize(ex.Message); }
     }

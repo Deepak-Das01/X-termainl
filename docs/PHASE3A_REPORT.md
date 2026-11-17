@@ -1,4 +1,4 @@
-# X-Terminal Phase 3A — Tasks 0–3
+﻿# X-Terminal Phase 3A — Tasks 0–3
 
 **Milestone:** Phase 3A  
 **Scope:** Baseline validation, advanced SSH connection management, jump/bastion chains, OpenSSH config import  
@@ -13,7 +13,7 @@ Phase 3A strengthens SSH connection management (auth methods, timeouts/keepalive
 
 **Automated:** Release build + **53** Phase 3A gate tests passed on `_phase3a_out` (44 Phase 1–2 preserved + 9 Phase 3A). Full working-tree suite also green at **59** (includes uncommitted 3B+ WIP tests).  
 **Manual:** Live SSH / bastion / config-import UX still required (see checklist).  
-**Git checkpoint:** `86f23c7` on `main` (Phase 3A scope only). Later-milestone WIP remains uncommitted.
+**Git checkpoint:** `ab546a8` on `main` (Phase 3A scope). Subsequent Phase 3B/3C commits follow on the same branch.
 
 ---
 

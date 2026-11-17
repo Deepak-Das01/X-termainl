@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.Linq;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Shell;
@@ -297,6 +298,9 @@ public partial class MainWindow : Window
 
     private void Window_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (_viewModel.IsRecordingKeybinding)
+            return;
+
         if (e.Key == Key.Escape)
         {
             ProfilePopup.IsOpen = false;
@@ -305,6 +309,16 @@ public partial class MainWindow : Window
                 _viewModel.CloseOverlaysCommand.Execute(null);
                 e.Handled = true;
             }
+            return;
+        }
+
+        if (_viewModel.Keybindings?.TryMatch(e.Key, Keyboard.Modifiers, out var commandId) == true &&
+            _viewModel.Commands.Commands.FirstOrDefault(c => c.Id == commandId) is { } matched &&
+            (matched.CanExecute?.Invoke() ?? true))
+        {
+            matched.Execute();
+            _viewModel.Commands.MarkUsed(commandId);
+            e.Handled = true;
             return;
         }
 
