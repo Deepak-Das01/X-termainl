@@ -27,8 +27,6 @@ public class LiveShellTunnelDiagnosticsTests
         var buffer = new StringBuilder();
         var parser = new ShellIntegrationParser { Enabled = true };
         var oscEvents = new List<ShellIntegrationEvent>();
-        // Unique markers unlikely to appear only as echoed command text without a trailing newline
-        // from printf — we require a line that is exactly the marker (or marker + CR).
         var markerOk = "XTOK-" + Guid.NewGuid().ToString("N");
         var markerFail = "XTFAIL-" + Guid.NewGuid().ToString("N");
         var cwdToken = "/tmp/xterminal-it-" + Guid.NewGuid().ToString("N");
@@ -58,14 +56,15 @@ public class LiveShellTunnelDiagnosticsTests
                     sawExit1.TrySetResult(ev);
             }
 
-            if (ContainsStandaloneMarker(buffer, markerOk))
+            var all = buffer.ToString();
+            if (ShellOutputMarker.ContainsUnquotedLine(all, markerOk))
                 sawOk.TrySetResult(true);
-            if (ContainsStandaloneMarker(buffer, markerFail))
+            if (ShellOutputMarker.ContainsUnquotedLine(all, markerFail))
                 sawFail.TrySetResult(true);
         }
 
         host.OutputReceived += OnOutput;
-        using var overall = new CancellationTokenSource(TimeSpan.FromSeconds(75));
+        using var overall = new CancellationTokenSource(TimeSpan.FromSeconds(90));
 
         try
         {
@@ -88,38 +87,40 @@ public class LiveShellTunnelDiagnosticsTests
             Assert.True(host.IsConnected);
             Assert.Equal(ConnectionState.Connected, host.State);
 
-            // Portable printf escapes; session-local OSC only (no remote rc changes).
-            host.Write(Encoding.UTF8.GetBytes(
-                $"printf '%s\\n' '{markerOk}'; " +
-                $"printf '\\x1b]7;file://localhost{cwdToken}\\x07'; " +
-                $"printf '\\x1b]133;D;0\\x07'\n"));
-
+            // One command per write — compound lines with \x escapes proved brittle on interactive shells.
+            // Same pattern as Live_ssh_interactive_shell_echoes_marker (which already passes live).
+            host.Write(Encoding.UTF8.GetBytes($"printf '%s\\n' '{markerOk}'\n"));
             await LiveIntegrationWait.ExpectAsync(
                 sawOk, TimeSpan.FromSeconds(20),
-                "Timed out waiting for successful-command marker (not echo-only).",
+                TimeoutDetail("successful-command marker", buffer),
                 overall.Token);
+
+            // Session-local OSC via portable octal printf escapes (no remote rc changes).
+            host.Write(Encoding.UTF8.GetBytes(
+                $"printf '\\033]7;file://localhost{cwdToken}\\007'\n"));
             var dirEv = await LiveIntegrationWait.ExpectAsync(
                 sawDir, TimeSpan.FromSeconds(20),
-                "Timed out waiting for session-local OSC 7 directory event.",
+                TimeoutDetail("session-local OSC 7 directory event", buffer),
                 overall.Token);
             Assert.Contains(cwdToken, dirEv.WorkingDirectory ?? "", StringComparison.Ordinal);
+
+            host.Write(Encoding.UTF8.GetBytes("printf '\\033]133;D;0\\007'\n"));
             var exit0 = await LiveIntegrationWait.ExpectAsync(
                 sawExit0, TimeSpan.FromSeconds(20),
-                "Timed out waiting for session-local OSC 133 exit=0.",
+                TimeoutDetail("session-local OSC 133 exit=0", buffer),
                 overall.Token);
             Assert.Equal(0, exit0.ExitCode);
 
-            host.Write(Encoding.UTF8.GetBytes(
-                $"printf '%s\\n' '{markerFail}'; " +
-                $"printf '\\x1b]133;D;1\\x07'\n"));
-
+            host.Write(Encoding.UTF8.GetBytes($"printf '%s\\n' '{markerFail}'\n"));
             await LiveIntegrationWait.ExpectAsync(
                 sawFail, TimeSpan.FromSeconds(20),
-                "Timed out waiting for failed-command marker.",
+                TimeoutDetail("failed-command marker", buffer),
                 overall.Token);
+
+            host.Write(Encoding.UTF8.GetBytes("printf '\\033]133;D;1\\007'\n"));
             var exit1 = await LiveIntegrationWait.ExpectAsync(
                 sawExit1, TimeSpan.FromSeconds(20),
-                "Timed out waiting for session-local OSC 133 exit=1.",
+                TimeoutDetail("session-local OSC 133 exit=1", buffer),
                 overall.Token);
             Assert.Equal(1, exit1.ExitCode);
 
@@ -209,18 +210,13 @@ public class LiveShellTunnelDiagnosticsTests
         }
     }
 
-    /// <summary>
-    /// Requires the marker as its own line so a quoted echo of the printf command alone is insufficient.
-    /// </summary>
-    private static bool ContainsStandaloneMarker(StringBuilder buffer, string marker)
+    /// <summary>Sanitized timeout detail — never includes remote host, user, or buffer contents.</summary>
+    private static string TimeoutDetail(string what, StringBuilder buffer)
     {
         var text = buffer.ToString();
-        // printf output ends with newline: "...\nMARKER\n" or "\r\nMARKER\r\n"
-        return text.Contains("\n" + marker + "\n", StringComparison.Ordinal) ||
-               text.Contains("\n" + marker + "\r", StringComparison.Ordinal) ||
-               text.Contains("\r" + marker + "\n", StringComparison.Ordinal) ||
-               text.StartsWith(marker + "\n", StringComparison.Ordinal) ||
-               text.StartsWith(marker + "\r", StringComparison.Ordinal);
+        var esc = text.Contains('\u001b');
+        var bel = text.Contains('\u0007');
+        return $"Timed out waiting for {what} (recvChars={text.Length}, escSeen={esc}, belSeen={bel}).";
     }
 
     private static int GetFreeLoopbackPort()
