@@ -1,7 +1,7 @@
 <Window x:Class="XTerminal.App.Views.VncConnectWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="VNC Session" Height="460" Width="440"
+        Title="VNC Session" Height="620" Width="460"
         WindowStartupLocation="CenterOwner"
         Background="{DynamicResource BrushAppBackground}"
         Foreground="{DynamicResource BrushTextPrimary}"
@@ -11,54 +11,80 @@
       <Button Style="{StaticResource CompactBtn}" Content="Cancel" IsCancel="True" Click="Cancel_OnClick" Margin="0,0,8,0" />
       <Button Style="{StaticResource CompactBtnPrimary}" Content="Connect" IsDefault="True" Click="Connect_OnClick" />
     </StackPanel>
-    <StackPanel>
-      <TextBlock Text="VNC Session" Style="{StaticResource PageTitle}" Margin="0,0,0,4" />
-      <Border Background="#33E8A838" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
-        <TextBlock TextWrapping="Wrap" FontSize="12"
-                   Text="Classic VNC Auth is not transport encryption. Prefer an SSH tunnel when possible. Unauthenticated VNC requires explicit acknowledgment." />
-      </Border>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel>
+        <TextBlock Text="VNC Session" Style="{StaticResource PageTitle}" Margin="0,0,0,4" />
+        <Border Background="#33E8A838" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+          <TextBlock TextWrapping="Wrap" FontSize="12"
+                     Text="Classic VNC Auth is not transport encryption. Prefer SSH tunnel when possible. Unauthenticated VNC requires explicit acknowledgment. Connecting to localhost alone is not treated as encrypted." />
+        </Border>
 
-      <TextBlock Text="Profile name" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
-      <TextBox x:Name="NameBox" Text="VNC" Padding="8,6" Margin="0,0,0,10"
-               Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+        <TextBlock Text="Profile name" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+        <TextBox x:Name="NameBox" Text="VNC" Padding="8,6" Margin="0,0,0,10"
+                 Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
 
-      <Grid Margin="0,0,0,10">
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*" />
-          <ColumnDefinition Width="90" />
-        </Grid.ColumnDefinitions>
-        <StackPanel Margin="0,0,8,0">
-          <TextBlock Text="Host" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
-          <TextBox x:Name="HostBox" Padding="8,6"
-                   Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
-        </StackPanel>
-        <StackPanel Grid.Column="1">
-          <TextBlock Text="Port" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
-          <TextBox x:Name="PortBox" Text="5900" Padding="8,6"
-                   Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
-        </StackPanel>
-      </Grid>
+        <Grid Margin="0,0,0,10">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="90" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Text="Host (direct)" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+            <TextBox x:Name="HostBox" Padding="8,6"
+                     Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="Port" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+            <TextBox x:Name="PortBox" Text="5900" Padding="8,6"
+                     Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+          </StackPanel>
+        </Grid>
 
-      <TextBlock Text="Password" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
-      <PasswordBox x:Name="PasswordBox" Padding="8,6" Margin="0,0,0,8"
-                   Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
-      <CheckBox x:Name="RememberBox" Content="Remember password (Credential Manager)"
-                Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
+        <CheckBox x:Name="TunnelBox" Content="Use SSH local forward (application-owned tunnel)"
+                  Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6"
+                  Checked="TunnelBox_OnChanged" Unchecked="TunnelBox_OnChanged" />
+        <TextBlock Text="SSH profile" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+        <ComboBox x:Name="SshSessionBox" Padding="6,4" Margin="0,0,0,8"
+                  DisplayMemberPath="Name"
+                  Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+        <Grid Margin="0,0,0,10">
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="90" />
+          </Grid.ColumnDefinitions>
+          <StackPanel Margin="0,0,8,0">
+            <TextBlock Text="Remote VNC host (from SSH server)" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+            <TextBox x:Name="TunnelHostBox" Text="127.0.0.1" Padding="8,6"
+                     Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+          </StackPanel>
+          <StackPanel Grid.Column="1">
+            <TextBlock Text="Remote port" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+            <TextBox x:Name="TunnelPortBox" Text="5900" Padding="8,6"
+                     Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+          </StackPanel>
+        </Grid>
 
-      <TextBlock Text="Authentication" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
-      <ComboBox x:Name="AuthBox" Padding="6,4" Margin="0,0,0,10"
-                Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+        <TextBlock Text="Password" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+        <PasswordBox x:Name="PasswordBox" Padding="8,6" Margin="0,0,0,8"
+                     Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+        <CheckBox x:Name="RememberBox" Content="Remember password (Credential Manager)"
+                  Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
 
-      <CheckBox x:Name="ReadOnlyBox" Content="Read-only (no keyboard/mouse)"
-                Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
-      <CheckBox x:Name="AllowPlainBox" Content="Allow unauthenticated / plaintext VNC (explicit)"
-                Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
-      <CheckBox x:Name="ClipboardBox" Content="Clipboard sharing (off by default)"
-                Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
-      <CheckBox x:Name="AutoReconnectBox" Content="Allow reconnect for this profile"
-                Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6" />
-      <CheckBox x:Name="SaveBox" Content="Save as profile" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6" />
-      <TextBlock x:Name="ErrorText" Foreground="#FFEF9A9A" FontSize="11" TextWrapping="Wrap" />
-    </StackPanel>
+        <TextBlock Text="Authentication" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,4" />
+        <ComboBox x:Name="AuthBox" Padding="6,4" Margin="0,0,0,10"
+                  Background="{DynamicResource BrushSurfaceElevated}" BorderBrush="{DynamicResource BrushBorderSoft}" />
+
+        <CheckBox x:Name="ReadOnlyBox" Content="Read-only (no keyboard/mouse)"
+                  Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
+        <CheckBox x:Name="AllowPlainBox" Content="Allow unauthenticated / plaintext VNC (explicit)"
+                  Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
+        <CheckBox x:Name="ClipboardBox" Content="Clipboard sharing (off by default)"
+                  Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
+        <CheckBox x:Name="AutoReconnectBox" Content="Allow reconnect for this profile"
+                  Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6" />
+        <CheckBox x:Name="SaveBox" Content="Save as profile" Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,6" />
+        <TextBlock x:Name="ErrorText" Foreground="#FFEF9A9A" FontSize="11" TextWrapping="Wrap" />
+      </StackPanel>
+    </ScrollViewer>
   </DockPanel>
 </Window>

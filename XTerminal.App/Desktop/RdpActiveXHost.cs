@@ -121,34 +121,30 @@ public sealed class RdpActiveXHost : AxHost
         }
     }
 
+    /// <summary>
+    /// Attempts CAD via the ActiveX control only. Never synthesizes Ctrl+Alt+Del for the local OS.
+    /// Returns false when the installed mstscax build does not expose a verified SendKeys API.
+    /// </summary>
     public bool TrySendCtrlAltDel()
     {
+        if (_ocx is null) return false;
         try
         {
-            // IMsRdpClientNonScriptable::SendKeys — prefer SecuredSettings if present.
-            var secured = GetProp("SecuredSettings3") ?? GetProp("SecuredSettings2") ?? GetProp("SecuredSettings");
-            if (secured is not null)
-            {
-                // KeyboardHookMode already may capture; use SyncSession/ConnectShare alternative:
-                InvokeOn(secured, "SendKeys", null!); // may not exist
-            }
+            // IMsRdpClientNonScriptable::SendKeys(numKeys, keyData, keyState) — VK codes.
+            // 0x1D=Ctrl, 0x38=Alt, 0x53=Delete (scan-code style arrays vary by control version).
+            var keyData = new int[] { 0x1D, 0x38, 0x53 };
+            var keyState = new int[] { 0, 0, 0 };
+            _ocx.GetType().InvokeMember(
+                "SendKeys",
+                BindingFlags.InvokeMethod,
+                null,
+                _ocx,
+                new object[] { 3, keyData, keyState });
+            return true;
         }
         catch
         {
-            // fall through
-        }
-
-        // Documented approach for ActiveX: put focus and send CAD via non-scriptable when available.
-        try
-        {
-            var ns = _ocx;
-            if (ns is null) return false;
-            // Many builds expose SendKeys(int numKeys, ref Array keyData, ref Array keyState)
-            // Skip unsafe local CAD injection — never send Ctrl+Alt+Del to the local workstation.
-            return false;
-        }
-        catch
-        {
+            // Verified native CAD path unavailable — do not fall back to local input injection.
             return false;
         }
     }

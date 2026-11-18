@@ -53,6 +53,11 @@ public sealed class SessionDefinition
     /// <summary>When true, UI may persist a Credential Manager entry (never the secret itself in JSON).</summary>
     public bool? PersistCredential { get; set; }
 
+    /// <summary>VNC over SSH local forward (application-owned). Never implies encryption solely from Host=localhost.</summary>
+    public bool? UseSshTunnel { get; set; }
+    public string? VncTunnelRemoteHost { get; set; }
+    public int? VncTunnelRemotePort { get; set; }
+
     public Dictionary<string, string> Extra { get; set; } = new();
 
     /// <summary>Links to <see cref="Ssh.SshSessionRecord"/> metadata (secrets stay in Credential Manager).</summary>
@@ -96,7 +101,11 @@ public sealed class SessionDefinition
         Fullscreen = Fullscreen ?? false,
         ShareClipboard = ShareClipboard ?? false,
         AutoReconnect = AutoReconnect ?? false,
-        AllowUnencrypted = AllowUnencryptedVnc ?? false
+        AllowUnencrypted = AllowUnencryptedVnc ?? false,
+        UseSshTunnel = UseSshTunnel ?? false,
+        SshTunnelSessionId = SshSessionId,
+        TunnelRemoteHost = string.IsNullOrWhiteSpace(VncTunnelRemoteHost) ? "127.0.0.1" : VncTunnelRemoteHost,
+        TunnelRemotePort = VncTunnelRemotePort is > 0 and <= 65535 ? VncTunnelRemotePort.Value : (Port is > 0 and <= 65535 ? Port.Value : 5900)
     };
 
     public SerialSessionProfile ToSerialProfile() => new()

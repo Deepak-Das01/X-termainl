@@ -58,10 +58,10 @@ X-Terminal is designed as a MobaXterm-class alternative for Windows operators wh
 | Serial | Yes | No | No | Exclusive COM ownership; no remote resize |
 | Telnet | Yes | No | No | **Unencrypted**; per-host warning |
 | RDP | Graphical tab | No | No | Embedded MsRdpClient9 ActiveX; NLA default |
-| VNC | Graphical tab | No | No | First-party RFB; Auth ≠ encryption |
-| X11 | No | — | — | Gated until dedicated milestone |
+| VNC | Graphical tab | No | Optional via SSH local forward | First-party RFB; Auth ≠ encryption; optional SSH tunnel |
+| X11 | SSH capability (gated) | — | — | Preferences + BYO X server; **no live x11-req** (SSH.NET public API gap) |
 
-See [`docs/RDP.md`](docs/RDP.md), [`docs/VNC.md`](docs/VNC.md), [`docs/REMOTE_DESKTOP_ARCHITECTURE.md`](docs/REMOTE_DESKTOP_ARCHITECTURE.md).
+See [`docs/RDP.md`](docs/RDP.md), [`docs/VNC.md`](docs/VNC.md), [`docs/REMOTE_DESKTOP_ARCHITECTURE.md`](docs/REMOTE_DESKTOP_ARCHITECTURE.md), [`docs/X11_FORWARDING.md`](docs/X11_FORWARDING.md), [`docs/adr/ADR-004C-X11-FORWARDING.md`](docs/adr/ADR-004C-X11-FORWARDING.md).
 
 See [`docs/SERIAL_CONSOLE.md`](docs/SERIAL_CONSOLE.md) and [`docs/TELNET_PROTOCOL.md`](docs/TELNET_PROTOCOL.md).
 
@@ -351,9 +351,10 @@ Optional hardware loopback: set `XTERMINAL_SERIAL_PORT_A` / `XTERMINAL_SERIAL_PO
 Open **New RDP Session** / **New VNC Session** from the toolbar or command palette. These create **graphical desktop tabs**, not terminal panes.
 
 - **RDP:** Embedded Microsoft ActiveX (`MsRdpClient9`). NLA/CredSSP on by default; redirections off; passwords in Credential Manager. See [`docs/RDP.md`](docs/RDP.md).
-- **VNC:** First-party RFB client. Classic VNC Auth is **not** transport encryption; unauthenticated VNC requires explicit acknowledgment. See [`docs/VNC.md`](docs/VNC.md).
+- **VNC:** First-party RFB client. Classic VNC Auth is **not** transport encryption; unauthenticated VNC requires explicit acknowledgment. Optional **SSH local forward** (application-owned loopback tunnel) via an explicit SSH profile. See [`docs/VNC.md`](docs/VNC.md).
+- **X11:** SSH session editor tab + Settings → X11 for BYO X server paths and diagnostics. **Genuine x11-req forwarding is not available** with SSH.NET 2026.0.0 (no public API). Preferences persist; forwarding stays gated. See [`docs/X11_FORWARDING.md`](docs/X11_FORWARDING.md).
 
-Workspace restore leaves RDP/VNC tabs **disconnected** until you reconnect. Graphical split panes are not supported in Phase 4B.
+Workspace restore leaves RDP/VNC tabs **disconnected** until you reconnect. Graphical split panes are not supported. X servers are never auto-started on restore.
 
 ## Telnet
 
@@ -584,6 +585,10 @@ Real `SerialSessionHost` and `TelnetSessionHost` with capability gating, COM dis
 
 Graphical desktop tabs (`DesktopTabViewModel`), embedded RDP ActiveX, first-party VNC RFB client, Credential Manager isolation, workspace restore disconnected-by-default, VNC loopback tests. See [`docs/PHASE4B_REPORT.md`](docs/PHASE4B_REPORT.md).
 
+### Phase 4C — Secure X11 prep and graphical hardening
+
+ADR selecting **Option D** (gate X11 forwarding): SSH.NET internals only for `x11-req`. BYO `XServerManager`, SSH X11 preferences UI, cookie/setup protocol-prep tests, VNC parser hardening, VNC-over-SSH tunnels, RDP secure-default regression tests. See [`docs/PHASE4C_REPORT.md`](docs/PHASE4C_REPORT.md), [`docs/adr/ADR-004C-X11-FORWARDING.md`](docs/adr/ADR-004C-X11-FORWARDING.md).
+
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
 ---
@@ -618,9 +623,10 @@ CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows 
 |-------|--------|
 | Serial console | Implemented (Phase 4A); hardware live optional |
 | Telnet | Implemented (Phase 4A); plaintext; loopback-tested |
-| RDP | Implemented (Phase 4B); ActiveX; live endpoint optional |
-| VNC | Implemented (Phase 4B); RFB Raw/CopyRect; loopback-tested |
-| X11 | Not implemented (gated) |
+| RDP | Implemented (Phase 4B/4C); ActiveX; live endpoint optional |
+| VNC | Implemented; RFB Raw/CopyRect; loopback-tested; optional SSH tunnel |
+| VNC TLS / VeNCrypt | Unsupported |
+| X11 forwarding | **Gated** — preferences + BYO X server only (ADR-004C) |
 | Per-forward byte counters | Not available from SSH.NET — UI shows **N/A** |
 | Shell integration without hooks | Remains Detecting/Unavailable; terminal still works |
 | SSH agent / Pageant | Default-key fallback only — not a full agent bridge |
@@ -628,7 +634,7 @@ CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows 
 | Per-forward byte / connection truth | Listener status only; bytes N/A |
 | Password echo masking | Not faked; Private Input documents real guarantees |
 | Live process / buffer restore | Not supported (by design) |
-| RDP / VNC / etc. | Explicitly out of scope until dedicated design |
+| Phase 5 (K8s / OpenShift / DevOps) | Not started |
 
 Contributions and issues: use the GitHub repository. Keep secrets out of commits — `.gitignore` excludes keys, `.env`, logs, WebView2 data, and build outputs.
 

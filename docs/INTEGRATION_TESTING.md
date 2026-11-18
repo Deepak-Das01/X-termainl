@@ -2,6 +2,14 @@
 
 Live SSH/SFTP tests against an authorized private server are **optional** and never required by GitHub Actions.
 
+Phase 4C: re-run the secure runner after graphical hardening — do not reuse earlier 10/10 results as current checkpoint evidence:
+
+```powershell
+powershell -NoProfile -File tools\run-live-integration.ps1
+```
+
+X11 live graphical validation remains **blocked** until a supported SSH X11 backend exists. VNC/RDP external live tests remain optional.
+
 ## Rules
 
 - Target only a server the developer explicitly authorizes.

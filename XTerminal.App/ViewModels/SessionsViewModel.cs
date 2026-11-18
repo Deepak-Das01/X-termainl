@@ -29,6 +29,7 @@ public partial class SessionsViewModel : ObservableObject
 
     public ObservableCollection<SessionTreeNode> Roots { get; } = new();
     public ObservableCollection<SshSessionRecord> FlatSessions { get; } = new();
+    public ISshSessionLibrary Library => _library;
     public event Action<SshSessionRecord>? ConnectRequested;
     public event Action<SshSessionRecord>? SftpRequested;
     public event Action<SshSessionEditorViewModel, bool>? EditRequested; // bool = isNew

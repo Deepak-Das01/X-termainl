@@ -52,6 +52,7 @@ public sealed class JsonSettingsStore : ISettingsStore
         settings.Editor ??= new EditorAppearanceSettings();
         settings.History ??= new HistorySettings();
         settings.Ssh ??= new SshAppSettings();
+        settings.X11 ??= new Models.X11.X11AppSettings();
         settings.Files ??= new FilesAppSettings();
         settings.Security ??= new SecurityAppSettings();
         settings.Advanced ??= new AdvancedAppSettings();

@@ -22,6 +22,28 @@ public static class VncProfileValidator
             error = "Unauthenticated VNC requires explicit AllowUnencrypted acknowledgment.";
             return false;
         }
+
+        if (profile.UseSshTunnel)
+        {
+            if (profile.SshTunnelSessionId is null || profile.SshTunnelSessionId == Guid.Empty)
+            {
+                error = "VNC over SSH requires an explicitly selected SSH profile.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(profile.TunnelRemoteHost))
+            {
+                error = "Tunnel remote host is required.";
+                return false;
+            }
+
+            if (profile.TunnelRemotePort is < 1 or > 65535)
+            {
+                error = "Tunnel remote port must be 1–65535.";
+                return false;
+            }
+        }
+
         return true;
     }
 

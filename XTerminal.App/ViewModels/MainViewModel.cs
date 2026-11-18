@@ -13,8 +13,11 @@ using XTerminal.Core.Models.Ssh;
 using XTerminal.Core.Security;
 using XTerminal.Core.Services;
 using XTerminal.Core.Settings;
+using XTerminal.Core.Models.X11;
+using XTerminal.Core.Services.X11;
 using XTerminal.Protocols;
 using XTerminal.Protocols.Ssh;
+using XTerminal.Protocols.Vnc;
 
 namespace XTerminal.App.ViewModels;
 
@@ -75,7 +78,7 @@ public partial class MainViewModel : ObservableObject
     public ObservableCollection<string> FontFamilies { get; } = new();
     public ObservableCollection<string> SettingsCategories { get; } =
     [
-        "General", "Appearance", "Terminal", "Profiles", "SSH", "Editor", "Files",
+        "General", "Appearance", "Terminal", "Profiles", "SSH", "X11", "Editor", "Files",
         "History", "Keybindings", "Security", "Advanced", "About"
     ];
 
@@ -90,6 +93,9 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _keybindingFilter = "";
     [ObservableProperty] private string _keybindingRecordHint = "";
     [ObservableProperty] private bool _isRecordingKeybinding;
+    public XServerManager XServers { get; } = new();
+    public string X11DiagnosticSummary { get; private set; } = X11BackendCapability.BlockerReason;
+
     public string AboutVersion =>
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
     public string AboutRuntime => $"{Environment.OSVersion} · .NET {Environment.Version}";
@@ -1512,6 +1518,9 @@ public partial class MainViewModel : ObservableObject
     private void ApplySettingsToUi(AppSettings settings)
     {
         CurrentSettings = settings;
+        settings.X11 ??= new X11AppSettings();
+        XServers.Configure(settings.X11);
+        RefreshX11Diagnostics();
         ThemeMode = settings.ThemeMode;
         WindowMaterial = settings.WindowMaterial;
         IsUtilityPanelOpen = settings.IsUtilityPanelOpen;
@@ -2497,6 +2506,9 @@ public partial class MainViewModel : ObservableObject
             new AppCommand { Id = "settings.appearance", Title = "Settings: Appearance", Category = CommandCategory.Settings, Execute = () => { OpenSettings(); SettingsCategory = "Appearance"; } },
             new AppCommand { Id = "settings.terminal", Title = "Settings: Terminal", Category = CommandCategory.Settings, Execute = () => { OpenSettings(); SettingsCategory = "Terminal"; } },
             new AppCommand { Id = "settings.ssh", Title = "Settings: SSH", Category = CommandCategory.Settings, Execute = () => { OpenSettings(); SettingsCategory = "SSH"; } },
+            new AppCommand { Id = "settings.x11", Title = "Settings: X11", Category = CommandCategory.Settings, Execute = () => { OpenSettings(); SettingsCategory = "X11"; RefreshX11Diagnostics(); } },
+            new AppCommand { Id = "x11.startServer", Title = "Start application-owned X server", Category = CommandCategory.Settings, Execute = () => _ = StartOwnedXServerAsync() },
+            new AppCommand { Id = "x11.stopServer", Title = "Stop application-owned X server", Category = CommandCategory.Settings, Execute = () => StopOwnedXServer() },
             new AppCommand { Id = "settings.security", Title = "Settings: Security", Category = CommandCategory.Settings, Execute = () => { OpenSettings(); SettingsCategory = "Security"; } },
             new AppCommand { Id = "settings.keybindings", Title = "Settings: Keybindings", Category = CommandCategory.Settings, Execute = () => { OpenSettings(); SettingsCategory = "Keybindings"; } },
             new AppCommand { Id = "app.utility", Title = "Toggle Utility Panel", Category = CommandCategory.Application, Execute = ToggleUtilityPanel },
@@ -2615,7 +2627,7 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task NewVncSessionAsync()
     {
-        var window = new Views.VncConnectWindow { Owner = Application.Current?.MainWindow };
+        var window = new Views.VncConnectWindow(Sessions.FlatSessions) { Owner = Application.Current?.MainWindow };
         if (window.ShowDialog() != true || window.Result is null) return;
 
         var profile = window.Result.ToVncProfile();
@@ -2662,7 +2674,17 @@ public partial class MainViewModel : ObservableObject
             }
         }
 
-        var tab = new DesktopTabViewModel(ClonePreservingId(session), _secrets)
+        VncTunnelDependencies? tunnel = null;
+        if (session.Kind == SessionKind.Vnc && session.UseSshTunnel == true)
+        {
+            tunnel = new VncTunnelDependencies
+            {
+                Ports = Ports.Runtime,
+                SshLibrary = Sessions.Library
+            };
+        }
+
+        var tab = new DesktopTabViewModel(ClonePreservingId(session), _secrets, tunnel)
         {
             IsPlaceholder = !startHosts,
             Status = startHosts ? "Connecting…" : "Restored · disconnected (reconnect to connect)"
@@ -2751,9 +2773,44 @@ public partial class MainViewModel : ObservableObject
         ShareClipboard = source.ShareClipboard,
         AllowUnencryptedVnc = source.AllowUnencryptedVnc,
         PersistCredential = source.PersistCredential,
+        UseSshTunnel = source.UseSshTunnel,
+        VncTunnelRemoteHost = source.VncTunnelRemoteHost,
+        VncTunnelRemotePort = source.VncTunnelRemotePort,
         Extra = new Dictionary<string, string>(source.Extra),
         SshSessionId = source.SshSessionId
     };
+
+    public void RefreshX11Diagnostics()
+    {
+        CurrentSettings.X11 ??= new X11AppSettings();
+        XServers.Configure(CurrentSettings.X11);
+        var snap = XServers.BuildDiagnostics(
+            X11BackendCapability.IsForwardingAvailable
+                ? X11ForwardingStatus.Ready
+                : X11ForwardingStatus.BackendUnavailable);
+        X11DiagnosticSummary = snap.Summary;
+        OnPropertyChanged(nameof(X11DiagnosticSummary));
+    }
+
+    public async Task StartOwnedXServerAsync()
+    {
+        RefreshX11Diagnostics();
+        var display = CurrentSettings.X11.DefaultDisplayNumber ?? 0;
+        var (ok, message) = await XServers.StartOwnedAsync(display);
+        StatusShell = ok ? "X server started" : "X server start failed";
+        StatusConnection = message;
+        RefreshX11Diagnostics();
+        Notifications.Show("X server", message);
+    }
+
+    public void StopOwnedXServer()
+    {
+        var (ok, message) = XServers.StopOwned();
+        StatusShell = ok ? "X server stopped" : "X server";
+        StatusConnection = message;
+        RefreshX11Diagnostics();
+        Notifications.Show("X server", message);
+    }
 }
 
 public sealed class KeybindingRow : ObservableObject

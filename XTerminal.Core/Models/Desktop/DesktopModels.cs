@@ -51,4 +51,15 @@ public sealed class VncSessionProfile
     public bool AutoReconnect { get; set; }
     /// <summary>User acknowledged plaintext/legacy VNC for this host.</summary>
     public bool AllowUnencrypted { get; set; }
+
+    /// <summary>When true, require an application-owned SSH local forward; never fall back to direct Host.</summary>
+    public bool UseSshTunnel { get; set; }
+
+    /// <summary>SSH library session that owns the tunnel (host-key verified).</summary>
+    public Guid? SshTunnelSessionId { get; set; }
+
+    /// <summary>Remote VNC endpoint as seen from the SSH server (often 127.0.0.1).</summary>
+    public string TunnelRemoteHost { get; set; } = "127.0.0.1";
+
+    public int TunnelRemotePort { get; set; } = 5900;
 }

@@ -55,4 +55,23 @@ public partial class SettingsView : UserControl
     {
         if (Vm is not null) Vm.CursorStyle = mode;
     }
+
+    private void X11Refresh_OnClick(object sender, RoutedEventArgs e)
+    {
+        Vm?.RefreshX11Diagnostics();
+        Vm?.FlushNestedSettings();
+    }
+
+    private async void X11Start_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (Vm is null) return;
+        Vm.FlushNestedSettings();
+        await Vm.StartOwnedXServerAsync();
+    }
+
+    private void X11Stop_OnClick(object sender, RoutedEventArgs e)
+    {
+        Vm?.FlushNestedSettings();
+        Vm?.StopOwnedXServer();
+    }
 }

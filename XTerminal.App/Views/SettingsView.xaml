@@ -361,6 +361,35 @@
                      FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,10,0,0" TextWrapping="Wrap" />
         </StackPanel>
 
+        <!-- X11 -->
+        <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=X11}">
+          <Border Background="#33E8A838" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+            <TextBlock TextWrapping="Wrap" FontSize="12"
+                       Text="SSH X11 forwarding is gated (no public SSH.NET x11-req API). Configure a bring-your-own X server only. Never uses -ac or xhost +. Windows X servers are not auto-installed." />
+          </Border>
+          <TextBlock Text="Default X server executable (absolute path)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Text="{Binding CurrentSettings.X11.DefaultExecutablePath, UpdateSourceTrigger=PropertyChanged}"
+                   Margin="0,0,0,10" Padding="6,4" LostFocus="SettingsField_OnChanged" />
+          <TextBlock Text="Default display number (optional)" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
+          <TextBox Width="80" HorizontalAlignment="Left" Margin="0,0,0,10" Padding="6,4"
+                   Text="{Binding CurrentSettings.X11.DefaultDisplayNumber, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}"
+                   LostFocus="SettingsField_OnChanged" />
+          <CheckBox Content="Prefer loopback-only / localhost listeners" Margin="0,0,0,10"
+                    IsChecked="{Binding CurrentSettings.X11.PreferLoopbackOnly}"
+                    Foreground="{DynamicResource BrushTextPrimary}"
+                    Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
+          <TextBlock Text="{Binding X11DiagnosticSummary}" TextWrapping="Wrap" FontSize="11"
+                     Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" />
+          <StackPanel Orientation="Horizontal">
+            <Button Style="{StaticResource CompactBtn}" Content="Refresh diagnostics" Margin="0,0,8,0"
+                    Click="X11Refresh_OnClick" />
+            <Button Style="{StaticResource CompactBtn}" Content="Start owned X server" Margin="0,0,8,0"
+                    Click="X11Start_OnClick" />
+            <Button Style="{StaticResource CompactBtn}" Content="Stop owned X server"
+                    Click="X11Stop_OnClick" />
+          </StackPanel>
+        </StackPanel>
+
         <!-- Files -->
         <StackPanel Visibility="{Binding SettingsCategory, Converter={StaticResource CategoryVis}, ConverterParameter=Files}">
           <TextBlock Text="Default download directory" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
@@ -550,7 +579,7 @@
           <TextBlock Text="X-Terminal" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4" />
           <TextBlock Text="{Binding AboutVersion, StringFormat=Version {0}}" FontSize="12" Margin="0,0,0,4" />
           <TextBlock Text="{Binding AboutRuntime}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" />
-          <TextBlock Text="Dependencies: .NET 8, WPF, CommunityToolkit.Mvvm, WebView2, SSH.NET, xterm.js, Monaco Editor."
+          <TextBlock Text="Dependencies: .NET 8, WPF, CommunityToolkit.Mvvm, WebView2, SSH.NET 2026.0.0 (MIT), xterm.js, Monaco Editor. No bundled X server."
                      FontSize="11" TextWrapping="Wrap" Margin="0,0,0,12" Foreground="{DynamicResource BrushTextMuted}" />
           <Button Style="{StaticResource CompactBtn}" Content="Copy diagnostics" HorizontalAlignment="Left"
                   Command="{Binding CopyDiagnosticsCommand}" />

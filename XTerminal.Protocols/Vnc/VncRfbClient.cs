@@ -12,11 +12,13 @@ public sealed class VncFramebuffer
     public int Height { get; init; }
     /// <summary>BGRA32 pixels, length Width*Height*4.</summary>
     public byte[] Pixels { get; init; } = Array.Empty<byte>();
+    /// <summary>Connection generation — discard frames from previous sessions.</summary>
+    public long Generation { get; init; }
 }
 
 /// <summary>
 /// Bounded RFB 3.3/3.7/3.8 client. Supported encodings: Raw, CopyRect.
-/// Classic VNC Auth is not transport encryption.
+/// Classic VNC Auth is not transport encryption. Native VeNCrypt/TLS is not implemented.
 /// </summary>
 public sealed class VncRfbClient : IAsyncDisposable
 {
@@ -29,13 +31,15 @@ public sealed class VncRfbClient : IAsyncDisposable
     private int _height;
     private byte[] _pixels = Array.Empty<byte>();
     private bool _readOnly;
+    private long _generation;
     private readonly object _pixelGate = new();
 
     public string NegotiatedVersion { get; private set; } = "";
     public uint NegotiatedSecurityType { get; private set; }
     public int FramebufferWidth => _width;
     public int FramebufferHeight => _height;
-    public bool IsConnected => _stream is not null;
+    public long Generation => Interlocked.Read(ref _generation);
+    public bool IsConnected => _stream is not null && _disposed == 0;
 
     public event Action<VncFramebuffer>? FrameUpdated;
     public event Action? Disconnected;
@@ -62,11 +66,13 @@ public sealed class VncRfbClient : IAsyncDisposable
             stream.ReadTimeout = profile.ConnectionTimeoutSeconds * 1000;
             stream.WriteTimeout = profile.ConnectionTimeoutSeconds * 1000;
             await HandshakeAsync(stream, profile, password, linked.Token).ConfigureAwait(false);
+            Interlocked.Increment(ref _generation);
             _client = client;
             _stream = stream;
             client = null;
             _readCts = new CancellationTokenSource();
-            _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token));
+            var gen = Generation;
+            _readTask = Task.Run(() => ReadLoopAsync(gen, _readCts.Token));
             await RequestFramebufferUpdateAsync(incremental: false).ConfigureAwait(false);
         }
         catch
@@ -87,9 +93,11 @@ public sealed class VncRfbClient : IAsyncDisposable
         await DisconnectCoreAsync().ConfigureAwait(false);
         _readOnly = profile.ReadOnly;
         await HandshakeAsync(stream, profile, password, cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _generation);
         _stream = stream;
         _readCts = new CancellationTokenSource();
-        _readTask = Task.Run(() => ReadLoopAsync(_readCts.Token));
+        var gen = Generation;
+        _readTask = Task.Run(() => ReadLoopAsync(gen, _readCts.Token));
         await RequestFramebufferUpdateAsync(incremental: false).ConfigureAwait(false);
     }
 
@@ -97,7 +105,7 @@ public sealed class VncRfbClient : IAsyncDisposable
 
     public void SendKey(uint keysym, bool down)
     {
-        if (_readOnly || _stream is null) return;
+        if (_disposed != 0 || _readOnly || _stream is null) return;
         Span<byte> msg = stackalloc byte[8];
         msg[0] = VncClientMessage.KeyEvent;
         msg[1] = down ? (byte)1 : (byte)0;
@@ -108,7 +116,7 @@ public sealed class VncRfbClient : IAsyncDisposable
 
     public void SendPointer(int x, int y, byte buttonMask)
     {
-        if (_readOnly || _stream is null) return;
+        if (_disposed != 0 || _readOnly || _stream is null) return;
         x = Math.Clamp(x, 0, Math.Max(0, _width - 1));
         y = Math.Clamp(y, 0, Math.Max(0, _height - 1));
         Span<byte> msg = stackalloc byte[6];
@@ -142,7 +150,6 @@ public sealed class VncRfbClient : IAsyncDisposable
         if (!ver.StartsWith("RFB ", StringComparison.Ordinal))
             throw new InvalidOperationException("Not an RFB server.");
 
-        // Prefer 3.8, fall back to server major.minor when older.
         var clientVer = ver.StartsWith("RFB 003.003", StringComparison.Ordinal) ? "RFB 003.003\n"
             : ver.StartsWith("RFB 003.007", StringComparison.Ordinal) ? "RFB 003.007\n"
             : "RFB 003.008\n";
@@ -171,11 +178,9 @@ public sealed class VncRfbClient : IAsyncDisposable
 
         await AuthenticateAsync(stream, NegotiatedSecurityType, profile, password, ct).ConfigureAwait(false);
 
-        // SecurityResult for 3.7+
         if (!clientVer.StartsWith("RFB 003.003", StringComparison.Ordinal) ||
             NegotiatedSecurityType != VncSecurityType.None)
         {
-            // 3.3 VNC Auth also sends result; 3.3 None may not — handle both.
             if (NegotiatedSecurityType != VncSecurityType.None ||
                 !clientVer.StartsWith("RFB 003.003", StringComparison.Ordinal))
             {
@@ -191,14 +196,20 @@ public sealed class VncRfbClient : IAsyncDisposable
             }
         }
 
-        // ClientInit shared-flag = 1
         await stream.WriteAsync(new byte[] { 1 }, ct).ConfigureAwait(false);
         var init = await ReadExactAsync(stream, 24, ct).ConfigureAwait(false);
         _width = BinaryPrimitives.ReadUInt16BigEndian(init.AsSpan(0, 2));
         _height = BinaryPrimitives.ReadUInt16BigEndian(init.AsSpan(2, 2));
         ValidateDimensions(_width, _height);
+
+        // Server pixel format (16 bytes) — we request our own format next; reject absurd bpp.
+        var bitsPerPixel = init[4];
+        if (bitsPerPixel is not (8 or 16 or 32))
+            throw new InvalidOperationException("Unsupported server bits-per-pixel.");
+
         var nameLen = BinaryPrimitives.ReadUInt32BigEndian(init.AsSpan(20, 4));
-        if (nameLen > 4096) throw new InvalidOperationException("Desktop name too large.");
+        if (nameLen > VncLimits.MaxDesktopNameBytes)
+            throw new InvalidOperationException("Desktop name too large.");
         if (nameLen > 0)
             _ = await ReadExactAsync(stream, (int)nameLen, ct).ConfigureAwait(false);
 
@@ -245,19 +256,18 @@ public sealed class VncRfbClient : IAsyncDisposable
 
     private static async Task SendPixelFormatAsync(Stream stream, CancellationToken ct)
     {
-        // Request 32-bpp BGRA-like little-endian (RFB: max RGB, shifts)
         var msg = new byte[20];
         msg[0] = VncClientMessage.SetPixelFormat;
-        msg[4] = 32; // bits-per-pixel
-        msg[5] = 24; // depth
-        msg[6] = 0;  // big-endian-flag
-        msg[7] = 1;  // true-colour
-        BinaryPrimitives.WriteUInt16BigEndian(msg.AsSpan(8), 255);  // r max
-        BinaryPrimitives.WriteUInt16BigEndian(msg.AsSpan(10), 255); // g max
-        BinaryPrimitives.WriteUInt16BigEndian(msg.AsSpan(12), 255); // b max
-        msg[14] = 16; // r shift
-        msg[15] = 8;  // g shift
-        msg[16] = 0;  // b shift
+        msg[4] = 32;
+        msg[5] = 24;
+        msg[6] = 0;
+        msg[7] = 1;
+        BinaryPrimitives.WriteUInt16BigEndian(msg.AsSpan(8), 255);
+        BinaryPrimitives.WriteUInt16BigEndian(msg.AsSpan(10), 255);
+        BinaryPrimitives.WriteUInt16BigEndian(msg.AsSpan(12), 255);
+        msg[14] = 16;
+        msg[15] = 8;
+        msg[16] = 0;
         await stream.WriteAsync(msg, ct).ConfigureAwait(false);
     }
 
@@ -275,7 +285,7 @@ public sealed class VncRfbClient : IAsyncDisposable
     private async Task RequestFramebufferUpdateAsync(bool incremental)
     {
         var stream = _stream;
-        if (stream is null) return;
+        if (stream is null || _disposed != 0) return;
         var msg = new byte[10];
         msg[0] = VncClientMessage.FramebufferUpdateRequest;
         msg[1] = incremental ? (byte)1 : (byte)0;
@@ -286,20 +296,21 @@ public sealed class VncRfbClient : IAsyncDisposable
         await stream.WriteAsync(msg).ConfigureAwait(false);
     }
 
-    private async Task ReadLoopAsync(CancellationToken token)
+    private async Task ReadLoopAsync(long generation, CancellationToken token)
     {
         var stream = _stream;
         if (stream is null) return;
         try
         {
-            while (!token.IsCancellationRequested)
+            while (!token.IsCancellationRequested && _disposed == 0 && Generation == generation)
             {
                 var header = await ReadExactAsync(stream, 1, token).ConfigureAwait(false);
                 switch (header[0])
                 {
                     case VncServerMessage.FramebufferUpdate:
-                        await HandleFramebufferUpdateAsync(stream, token).ConfigureAwait(false);
-                        await RequestFramebufferUpdateAsync(incremental: true).ConfigureAwait(false);
+                        await HandleFramebufferUpdateAsync(stream, generation, token).ConfigureAwait(false);
+                        if (Generation == generation && _disposed == 0)
+                            await RequestFramebufferUpdateAsync(incremental: true).ConfigureAwait(false);
                         break;
                     case VncServerMessage.SetColourMapEntries:
                         await SkipColourMapAsync(stream, token).ConfigureAwait(false);
@@ -319,19 +330,22 @@ public sealed class VncRfbClient : IAsyncDisposable
         catch (IOException) { /* disconnect */ }
         catch (Exception ex)
         {
-            ProtocolError?.Invoke(ex.Message);
+            if (_disposed == 0 && Generation == generation)
+                ProtocolError?.Invoke(ex.Message);
         }
         finally
         {
-            Disconnected?.Invoke();
+            if (Generation == generation)
+                Disconnected?.Invoke();
         }
     }
 
-    private async Task HandleFramebufferUpdateAsync(Stream stream, CancellationToken ct)
+    private async Task HandleFramebufferUpdateAsync(Stream stream, long generation, CancellationToken ct)
     {
         var hdr = await ReadExactAsync(stream, 3, ct).ConfigureAwait(false);
         var rects = BinaryPrimitives.ReadUInt16BigEndian(hdr.AsSpan(1, 2));
-        if (rects > 4096) throw new InvalidOperationException("Too many framebuffer rectangles.");
+        if (rects > VncLimits.MaxRectanglesPerUpdate)
+            throw new InvalidOperationException("Too many framebuffer rectangles.");
 
         for (var i = 0; i < rects; i++)
         {
@@ -351,6 +365,9 @@ public sealed class VncRfbClient : IAsyncDisposable
                 throw new InvalidOperationException($"Unsupported VNC encoding {enc}.");
         }
 
+        if (Generation != generation || _disposed != 0)
+            return;
+
         VncFramebuffer frame;
         lock (_pixelGate)
         {
@@ -358,7 +375,8 @@ public sealed class VncRfbClient : IAsyncDisposable
             {
                 Width = _width,
                 Height = _height,
-                Pixels = SnapshotPixelsUnlocked()
+                Pixels = SnapshotPixelsUnlocked(),
+                Generation = generation
             };
         }
         FrameUpdated?.Invoke(frame);
@@ -375,7 +393,7 @@ public sealed class VncRfbClient : IAsyncDisposable
             for (var row = 0; row < h; row++)
             {
                 var src = row * w * 4;
-                var dst = ((y + row) * _width + x) * 4;
+                var dst = checked(((y + row) * _width + x) * 4);
                 Buffer.BlockCopy(data, src, _pixels, dst, w * 4);
             }
         }
@@ -389,15 +407,15 @@ public sealed class VncRfbClient : IAsyncDisposable
         ValidateRect(srcX, srcY, w, h);
         lock (_pixelGate)
         {
-            var temp = new byte[w * h * 4];
+            var temp = new byte[checked(w * h * 4)];
             for (var row = 0; row < h; row++)
             {
-                var src = ((srcY + row) * _width + srcX) * 4;
+                var src = checked(((srcY + row) * _width + srcX) * 4);
                 Buffer.BlockCopy(_pixels, src, temp, row * w * 4, w * 4);
             }
             for (var row = 0; row < h; row++)
             {
-                var dst = ((y + row) * _width + x) * 4;
+                var dst = checked(((y + row) * _width + x) * 4);
                 Buffer.BlockCopy(temp, row * w * 4, _pixels, dst, w * 4);
             }
         }
@@ -408,14 +426,14 @@ public sealed class VncRfbClient : IAsyncDisposable
         var hdr = await ReadExactAsync(stream, 5, ct).ConfigureAwait(false);
         var count = BinaryPrimitives.ReadUInt16BigEndian(hdr.AsSpan(3, 2));
         if (count > 4096) throw new InvalidOperationException("Colour map too large.");
-        _ = await ReadExactAsync(stream, count * 6, ct).ConfigureAwait(false);
+        _ = await ReadExactAsync(stream, checked(count * 6), ct).ConfigureAwait(false);
     }
 
     private static async Task SkipCutTextAsync(Stream stream, CancellationToken ct)
     {
         var hdr = await ReadExactAsync(stream, 7, ct).ConfigureAwait(false);
         var len = BinaryPrimitives.ReadUInt32BigEndian(hdr.AsSpan(3, 4));
-        if (len > 1024 * 1024) throw new InvalidOperationException("Cut text too large.");
+        if (len > VncLimits.MaxCutTextBytes) throw new InvalidOperationException("Cut text too large.");
         if (len > 0)
             _ = await ReadExactAsync(stream, (int)len, ct).ConfigureAwait(false);
     }
@@ -423,17 +441,38 @@ public sealed class VncRfbClient : IAsyncDisposable
     private void ValidateRect(int x, int y, int w, int h)
     {
         if (w <= 0 || h <= 0) throw new InvalidOperationException("Invalid rectangle size.");
-        if (x < 0 || y < 0 || x + w > _width || y + h > _height)
-            throw new InvalidOperationException("Rectangle outside framebuffer.");
-        if ((long)w * h > VncLimits.MaxRectPixels)
-            throw new InvalidOperationException("Rectangle exceeds pixel limit.");
+        if (x < 0 || y < 0) throw new InvalidOperationException("Rectangle outside framebuffer.");
+        try
+        {
+            var right = checked(x + w);
+            var bottom = checked(y + h);
+            if (right > _width || bottom > _height)
+                throw new InvalidOperationException("Rectangle outside framebuffer.");
+            if (checked((long)w * h) > VncLimits.MaxRectPixels)
+                throw new InvalidOperationException("Rectangle exceeds pixel limit.");
+            if (checked((long)w * h * 4) > VncLimits.MaxMessageBytes)
+                throw new InvalidOperationException("Rectangle payload exceeds message limit.");
+        }
+        catch (OverflowException)
+        {
+            throw new InvalidOperationException("Rectangle arithmetic overflow.");
+        }
     }
 
     private static void ValidateDimensions(int w, int h)
     {
         if (w is < 1 or > VncLimits.MaxWidth || h is < 1 or > VncLimits.MaxHeight)
             throw new InvalidOperationException("Invalid framebuffer dimensions.");
-        _ = checked(w * h * 4);
+        try
+        {
+            _ = checked(w * h * 4);
+            if ((long)w * h > VncLimits.MaxRectPixels)
+                throw new InvalidOperationException("Framebuffer exceeds pixel limit.");
+        }
+        catch (OverflowException)
+        {
+            throw new InvalidOperationException("Framebuffer allocation overflow.");
+        }
     }
 
     private byte[] SnapshotPixelsUnlocked()
@@ -447,7 +486,7 @@ public sealed class VncRfbClient : IAsyncDisposable
     {
         var lenBuf = await ReadExactAsync(stream, 4, ct).ConfigureAwait(false);
         var len = BinaryPrimitives.ReadUInt32BigEndian(lenBuf);
-        if (len > 4096) return "Connection failed.";
+        if (len > VncLimits.MaxErrorReasonBytes) return "Connection failed.";
         if (len == 0) return "Connection failed.";
         var bytes = await ReadExactAsync(stream, (int)len, ct).ConfigureAwait(false);
         return Encoding.UTF8.GetString(bytes);
@@ -470,6 +509,7 @@ public sealed class VncRfbClient : IAsyncDisposable
 
     private async Task DisconnectCoreAsync()
     {
+        Interlocked.Increment(ref _generation);
         try { _readCts?.Cancel(); } catch { /* ignore */ }
         var stream = _stream;
         _stream = null;
@@ -484,6 +524,8 @@ public sealed class VncRfbClient : IAsyncDisposable
         }
         _readCts?.Dispose();
         _readCts = null;
+        lock (_pixelGate)
+            _pixels = Array.Empty<byte>();
     }
 }
 

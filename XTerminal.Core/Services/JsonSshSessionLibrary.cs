@@ -51,6 +51,11 @@ public sealed class JsonSshSessionLibrary : ISshSessionLibrary
             session.EnvironmentVariables ??= new Dictionary<string, string>();
             session.Tags ??= new List<string>();
             session.PortForwards ??= new List<SshPortForwardRecord>();
+            session.X11 ??= new Models.X11.X11SessionSettings();
+            // Never persist cookies / authority paths from transient state.
+            session.X11.XServerExecutablePath = string.IsNullOrWhiteSpace(session.X11.XServerExecutablePath)
+                ? null
+                : session.X11.XServerExecutablePath.Trim();
         }
 
         await using var stream = File.Create(_path);

@@ -27,6 +27,7 @@ public partial class PortForwardingViewModel : ObservableObject
 
     public ObservableCollection<PortForwardRow> Forwards { get; } = new();
     public ObservableCollection<SshSessionRecord> SessionOptions { get; } = new();
+    public PortForwardRuntimeService Runtime => _runtime;
 
     public event Action<SshSessionRecord>? EditSessionRequested;
 

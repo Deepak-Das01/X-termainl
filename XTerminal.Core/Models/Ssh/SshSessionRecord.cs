@@ -1,3 +1,5 @@
+using XTerminal.Core.Models.X11;
+
 namespace XTerminal.Core.Models.Ssh;
 
 /// <summary>
@@ -35,6 +37,9 @@ public sealed class SshSessionRecord
     public int MaxReconnectAttempts { get; set; } = 3;
 
     public List<SshPortForwardRecord> PortForwards { get; set; } = new();
+
+    /// <summary>X11 preferences. Forwarding remains gated until a supported SSH backend exists. Never stores cookies.</summary>
+    public X11SessionSettings X11 { get; set; } = new();
 
     public Guid? FolderId { get; set; }
     public bool IsFavorite { get; set; }

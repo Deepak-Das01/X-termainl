@@ -218,6 +218,41 @@
           </StackPanel>
         </ScrollViewer>
       </TabItem>
+
+      <TabItem Header="X11">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="4,10,4,0">
+          <StackPanel>
+            <Border Background="#33E8A838" CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+              <TextBlock TextWrapping="Wrap" FontSize="12"
+                         Text="X11 forwarding is gated: SSH.NET has no public x11-req API. Preferences below are saved for a future backend and do not enable live forwarding." />
+            </Border>
+            <CheckBox Content="Enable X11 forwarding (when a supported backend exists)"
+                      IsChecked="{Binding X11EnableForwarding}"
+                      Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,8" />
+            <CheckBox Content="Trusted forwarding (requires acknowledgment — never default)"
+                      IsChecked="{Binding X11Trusted}"
+                      Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
+            <TextBlock Text="{Binding X11TrustedWarning}" TextWrapping="Wrap" FontSize="11"
+                       Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,6" />
+            <CheckBox Content="I understand trusted X11 risks"
+                      IsChecked="{Binding X11TrustedAcknowledged}"
+                      Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,10" />
+            <CheckBox Content="Specify display number" IsChecked="{Binding X11UseDisplayNumber}"
+                      Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,4" />
+            <TextBox Style="{StaticResource FieldBox}" Text="{Binding X11DisplayNumber, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding X11UseDisplayNumber}" />
+            <TextBlock Style="{StaticResource FieldLabel}" Text="X server executable (optional absolute path)" />
+            <TextBox Style="{StaticResource FieldBox}" Text="{Binding X11ServerPath, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Style="{StaticResource FieldLabel}" Text="Forwarding timeout (seconds)" />
+            <TextBox Style="{StaticResource FieldBox}" Text="{Binding X11TimeoutSeconds, UpdateSourceTrigger=PropertyChanged}" />
+            <CheckBox Content="Re-request X11 after SSH reconnect (never auto-starts X server on restore)"
+                      IsChecked="{Binding X11ReconnectWithSession}"
+                      Foreground="{DynamicResource BrushTextPrimary}" Margin="0,0,0,10" />
+            <TextBlock Text="{Binding X11StatusText}" TextWrapping="Wrap" FontSize="11"
+                       Foreground="{DynamicResource BrushTextMuted}" />
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
     </TabControl>
   </DockPanel>
 </Window>

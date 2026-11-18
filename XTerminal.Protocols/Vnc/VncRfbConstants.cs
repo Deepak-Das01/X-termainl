@@ -35,6 +35,11 @@ public static class VncLimits
 {
     public const int MaxWidth = 8192;
     public const int MaxHeight = 8192;
-    public const int MaxRectPixels = MaxWidth * MaxHeight;
+    /// <summary>Per-rectangle pixel cap (aligned so Raw 32bpp stays under MaxMessageBytes).</summary>
+    public const int MaxRectPixels = 16 * 1024 * 1024; // 16M pixels → 64MB at 4 bpp
     public const int MaxMessageBytes = 64 * 1024 * 1024;
+    public const int MaxDesktopNameBytes = 4096;
+    public const int MaxErrorReasonBytes = 4096;
+    public const int MaxRectanglesPerUpdate = 4096;
+    public const int MaxCutTextBytes = 1024 * 1024;
 }

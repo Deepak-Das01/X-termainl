@@ -3,7 +3,9 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using XTerminal.Core.Models;
 using XTerminal.Core.Models.Ssh;
+using XTerminal.Core.Models.X11;
 using XTerminal.Core.Security;
+using XTerminal.Core.Services.X11;
 using XTerminal.Core.Settings;
 using XTerminal.Protocols.Ssh;
 
@@ -44,13 +46,24 @@ public partial class SshSessionEditorViewModel : ObservableObject
     [ObservableProperty] private bool _isFavorite;
     [ObservableProperty] private string _testResult = string.Empty;
     [ObservableProperty] private bool _isTesting;
+    [ObservableProperty] private bool _x11EnableForwarding;
+    [ObservableProperty] private bool _x11Trusted;
+    [ObservableProperty] private bool _x11TrustedAcknowledged;
+    [ObservableProperty] private int _x11DisplayNumber;
+    [ObservableProperty] private bool _x11UseDisplayNumber;
+    [ObservableProperty] private string _x11ServerPath = string.Empty;
+    [ObservableProperty] private int _x11TimeoutSeconds = 20;
+    [ObservableProperty] private bool _x11ReconnectWithSession;
+    [ObservableProperty] private string _x11StatusText = X11BackendCapability.BlockerReason;
 
     public Guid SessionId { get; private set; } = Guid.NewGuid();
     public Guid? FolderId { get; set; }
     public ObservableCollection<SshPortForwardRecord> PortForwards { get; } = new();
     public ObservableCollection<SshFolderOption> FolderOptions { get; } = new();
     public IReadOnlyList<SshAuthMethod> AuthMethods { get; } = Enum.GetValues<SshAuthMethod>();
-    public IReadOnlyList<string> EditorTabs { get; } = ["General", "Authentication", "Advanced", "Port Forwarding", "Terminal"];
+    public IReadOnlyList<string> EditorTabs { get; } = ["General", "Authentication", "Advanced", "Port Forwarding", "Terminal", "X11"];
+    public string X11TrustedWarning => X11ProfileValidator.TrustedWarningBody;
+    public bool X11BackendAvailable => X11BackendCapability.IsForwardingAvailable;
 
     [ObservableProperty] private SshFolderOption? _selectedFolderOption;
 
@@ -132,6 +145,16 @@ public partial class SshSessionEditorViewModel : ObservableObject
         IsFavorite = record.IsFavorite;
         PortForwards.Clear();
         foreach (var f in record.PortForwards) PortForwards.Add(CloneForward(f));
+        var x11 = record.X11 ?? new X11SessionSettings();
+        X11EnableForwarding = x11.EnableForwarding;
+        X11Trusted = x11.TrustMode == X11TrustMode.Trusted;
+        X11TrustedAcknowledged = x11.TrustedForwardingAcknowledged;
+        X11UseDisplayNumber = x11.DisplayNumber.HasValue;
+        X11DisplayNumber = x11.DisplayNumber ?? 0;
+        X11ServerPath = x11.XServerExecutablePath ?? string.Empty;
+        X11TimeoutSeconds = x11.ForwardingTimeoutSeconds;
+        X11ReconnectWithSession = x11.ReconnectWithSession;
+        RefreshX11Status();
         // Secrets are never loaded into the editor for display; blank means "keep existing".
         Password = string.Empty;
         Passphrase = string.Empty;
@@ -166,6 +189,7 @@ public partial class SshSessionEditorViewModel : ObservableObject
             AutoReconnect = AutoReconnect,
             MaxReconnectAttempts = Math.Clamp(MaxReconnectAttempts, 0, 20),
             PortForwards = PortForwards.Select(CloneForward).ToList(),
+            X11 = BuildX11Settings(),
             FolderId = FolderId,
             IsFavorite = IsFavorite,
             Tags = TagsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
@@ -173,6 +197,30 @@ public partial class SshSessionEditorViewModel : ObservableObject
             CreatedUtc = DateTimeOffset.UtcNow
         };
     }
+
+    private X11SessionSettings BuildX11Settings() => new()
+    {
+        EnableForwarding = X11EnableForwarding,
+        TrustMode = X11Trusted ? X11TrustMode.Trusted : X11TrustMode.Untrusted,
+        TrustedForwardingAcknowledged = X11TrustedAcknowledged,
+        DisplayNumber = X11UseDisplayNumber ? X11DisplayNumber : null,
+        XServerExecutablePath = string.IsNullOrWhiteSpace(X11ServerPath) ? null : X11ServerPath.Trim(),
+        ForwardingTimeoutSeconds = Math.Clamp(X11TimeoutSeconds, 5, 120),
+        ReconnectWithSession = X11ReconnectWithSession
+    };
+
+    private void RefreshX11Status()
+    {
+        if (!X11EnableForwarding)
+            X11StatusText = "X11 forwarding disabled (default).";
+        else if (!X11BackendCapability.IsForwardingAvailable)
+            X11StatusText = "Backend unavailable — preferences can be saved but forwarding will not start. " +
+                            X11BackendCapability.BlockerReason;
+        else
+            X11StatusText = "Backend ready.";
+    }
+
+    partial void OnX11EnableForwardingChanged(bool value) => RefreshX11Status();
 
     public async Task PersistSecretsAsync(bool clearFromMemory = true, CancellationToken cancellationToken = default)
     {

@@ -16,14 +16,20 @@ namespace XTerminal.App.ViewModels;
 public partial class DesktopTabViewModel : ObservableObject, IWorkspaceTab, IAsyncDisposable
 {
     private readonly ISecretStore _secrets;
+    private readonly VncTunnelDependencies? _vncTunnel;
     private IGraphicalDesktopSession? _session;
     private VncGraphicalSession? _vnc;
+    private long _vncGeneration;
     private int _disposed;
 
-    public DesktopTabViewModel(SessionDefinition definition, ISecretStore secrets)
+    public DesktopTabViewModel(
+        SessionDefinition definition,
+        ISecretStore secrets,
+        VncTunnelDependencies? vncTunnel = null)
     {
         Definition = definition;
         _secrets = secrets;
+        _vncTunnel = vncTunnel;
         Title = definition.Name;
         Glyph = definition.Kind == SessionKind.Rdp ? "🖥" : "🖼";
         Accent = definition.Kind == SessionKind.Rdp ? "#5B9BD5" : "#7EAE9E";
@@ -166,12 +172,14 @@ public partial class DesktopTabViewModel : ObservableObject, IWorkspaceTab, IAsy
     private async Task StartVncAsync(CancellationToken cancellationToken = default)
     {
         var profile = Definition.ToVncProfile();
-        if (profile.AuthenticationMode == VncAuthenticationMode.None || profile.AllowUnencrypted)
+        if (profile.UseSshTunnel)
+            SecurityBanner = "VNC over SSH tunnel: encryption protects SSH endpoints only; remote DestinationHost may still be local to the SSH server.";
+        else if (profile.AuthenticationMode == VncAuthenticationMode.None || profile.AllowUnencrypted)
             SecurityBanner = "VNC session may be unencrypted — desktop traffic can be observed on the network.";
         else
             SecurityBanner = "VNC Auth does not encrypt framebuffer or input traffic.";
 
-        var session = new VncGraphicalSession(_secrets);
+        var session = new VncGraphicalSession(_secrets, _vncTunnel);
         _vnc = session;
         _session = session;
         session.StateChanged += (state, msg) =>
@@ -189,10 +197,15 @@ public partial class DesktopTabViewModel : ObservableObject, IWorkspaceTab, IAsy
         };
 
         await session.ConnectAsync(Definition, cancellationToken);
+        _vncGeneration = session.Client?.Generation ?? 0;
     }
 
     private void ApplyVncFrame(VncFramebuffer frame)
     {
+        if (frame.Generation != 0 && frame.Generation != _vncGeneration && _vnc?.Client is not null)
+            _vncGeneration = _vnc.Client.Generation;
+        if (frame.Generation != 0 && _vnc?.Client is not null && frame.Generation != _vnc.Client.Generation)
+            return;
         if (frame.Width <= 0 || frame.Height <= 0 || frame.Pixels.Length < frame.Width * frame.Height * 4)
             return;
         var bmp = new WriteableBitmap(frame.Width, frame.Height, 96, 96, PixelFormats.Bgra32, null);

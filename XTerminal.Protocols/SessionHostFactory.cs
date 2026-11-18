@@ -53,7 +53,7 @@ public sealed class SessionHostFactory
         SessionKind.Vnc => new StubSessionHost(SessionKind.Vnc, "VNC",
             "VNC uses graphical desktop tabs (not the terminal host pipeline)."),
         SessionKind.X11 => new StubSessionHost(SessionKind.X11, "X11",
-            "X11 forwarding UI is not supported in this release."),
+            "X11 is an SSH session capability. Genuine forwarding is gated: SSH.NET has no public x11-req API. See Settings → X11 and docs/adr/ADR-004C-X11-FORWARDING.md."),
         _ => new StubSessionHost(kind, kind.ToString(), "Not supported in this release.")
     };
 }

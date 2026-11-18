@@ -43,6 +43,10 @@ credentials.json
 **/known_hosts
 **/ssh-sessions*.local.json
 secrets/
+**/xauth-*.bin
+**/.Xauthority
+**/Xauthority
+**/*.xauth
 
 ## OS
 Thumbs.db

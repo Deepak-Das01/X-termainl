@@ -4,9 +4,9 @@
 
 - **Serial (Phase 4A):** Implemented. No SFTP/tunnels; no remote resize; COM ports never auto-open on workspace restore; friendly names may be unavailable; presence ≠ free. Physical COM validation outstanding without a loopback pair.
 - **Telnet (Phase 4A):** Implemented as plaintext. Not all servers behave identically; many RFC options unsupported; prefer SSH.
-- **RDP (Phase 4B):** Embedded MsRdpClient9 ActiveX. WPF airspace may occlude overlays; no graphical split panes; live endpoint validation not executed by default; Ctrl+Alt+Del not faked locally.
-- **VNC (Phase 4B):** First-party RFB client (Raw/CopyRect). Classic VNC Auth is not transport encryption; TLS VNC not implemented; live external servers not assumed.
-- X11 remains **not implemented** (gated).
+- **RDP (Phase 4B/4C):** Embedded MsRdpClient9 ActiveX. WPF airspace may occlude overlays; no graphical split panes; live endpoint validation not executed by default; Ctrl+Alt+Del only via ActiveX when available (never local OS injection).
+- **VNC (Phase 4B/4C):** First-party RFB client (Raw/CopyRect). Classic VNC Auth is not transport encryption; TLS/VeNCrypt unsupported; optional SSH tunnel; live external servers not assumed.
+- **X11 (Phase 4C):** Preferences + BYO X server manager shipped; **genuine forwarding gated** — SSH.NET has no public `x11-req` API (ADR-004C).
 - SSH agent / Pageant: default-key fallback only — not a full agent bridge.
 - Independent jump-host credentials remain limited.
 

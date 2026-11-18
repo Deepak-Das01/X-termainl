@@ -1,3 +1,5 @@
+using XTerminal.Core.Models.X11;
+
 namespace XTerminal.Core.Settings;
 
 public sealed class AppSettings
@@ -12,6 +14,7 @@ public sealed class AppSettings
     public EditorAppearanceSettings Editor { get; set; } = new();
     public HistorySettings History { get; set; } = new();
     public SshAppSettings Ssh { get; set; } = new();
+    public X11AppSettings X11 { get; set; } = new();
     public FilesAppSettings Files { get; set; } = new();
     public SecurityAppSettings Security { get; set; } = new();
     public AdvancedAppSettings Advanced { get; set; } = new();

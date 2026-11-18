@@ -130,6 +130,11 @@ public partial class DesktopSessionHost : UserControl
     private void OnKeyDown(object sender, KeyEventArgs e)
     {
         if (_vm is null || _vm.IsRdp) return;
+        // Keep application chords (Ctrl/Alt combos) local when not captured as plain VNC keys.
+        if ((Keyboard.Modifiers & ModifierKeys.Control) != 0 &&
+            (Keyboard.Modifiers & ModifierKeys.Alt) != 0)
+            return;
+
         var keysym = KeyToKeysym(e.Key);
         if (keysym != 0)
         {
@@ -149,6 +154,15 @@ public partial class DesktopSessionHost : UserControl
         }
     }
 
+    protected override void OnLostKeyboardFocus(KeyboardFocusChangedEventArgs e)
+    {
+        base.OnLostKeyboardFocus(e);
+        if (_vm is null || _vm.IsRdp) return;
+        // Release common modifiers so remote desktops do not stick after tab switch.
+        foreach (var keysym in new uint[] { 0xffe1, 0xffe2, 0xffe3, 0xffe4, 0xffe9, 0xffea })
+            _vm.SendVncKey(keysym, down: false);
+    }
+
     private static uint KeyToKeysym(Key key) => key switch
     {
         Key.Back => 0xff08,
@@ -161,6 +175,12 @@ public partial class DesktopSessionHost : UserControl
         Key.Down => 0xff54,
         Key.Delete => 0xffff,
         Key.Space => 0x20,
+        Key.LeftShift => 0xffe1,
+        Key.RightShift => 0xffe2,
+        Key.LeftCtrl => 0xffe3,
+        Key.RightCtrl => 0xffe4,
+        Key.LeftAlt => 0xffe9,
+        Key.RightAlt => 0xffea,
         >= Key.A and <= Key.Z => (uint)('a' + (key - Key.A)),
         >= Key.D0 and <= Key.D9 => (uint)('0' + (key - Key.D0)),
         _ => 0

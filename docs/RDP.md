@@ -1,34 +1,31 @@
 # RDP remote desktop
 
-Phase 4B embeds the **Microsoft Remote Desktop ActiveX** (`MsRdpClient9`) via `WindowsFormsHost` + `AxHost`.
-
-## Requirements
-
-- Windows with `mstscax.dll` / MsRdpClient9 registered (typical Windows 10/11 client SKUs).
-- X-Terminal built with WPF + Windows Forms interop enabled.
+Phase 4B embeds **Microsoft MsRdpClient9** ActiveX via `RdpActiveXHost` (`AxHost` + `WindowsFormsHost`). Phase 4C documents verification limits and keeps secure defaults.
 
 ## Security defaults
 
 | Setting | Default |
 |---------|---------|
-| NLA / CredSSP | On |
-| Authentication level | 2 (require) |
+| Require NLA / CredSSP support flag | On |
+| AuthenticationLevel | 2 (require) |
 | Clipboard / drives / printers / audio redirection | Off |
-| Passwords | Windows Credential Manager only |
+| Credentials in JSON | Never — Credential Manager only |
 
-The application does not silently downgrade NLA. Certificate/identity handling follows the native control and Windows policy.
+Setting `EnableCredSspSupport` alone is **not** equated with full NLA/certificate policy enforcement. Certificate failure UX depends on the installed `mstscax` control; X-Terminal does not automatically accept certificate failures.
 
-## Capabilities
+## Runtime
 
-Supported where the ActiveX control provides them: connect/disconnect, desktop size, color depth, smart sizing, CredSSP, least-privilege redirection toggles.
+- CLSID `301B94BA-5D25-4A12-BFFE-3B6E7A616585` (MsRdpClient9)
+- Absence of ActiveX produces a safe actionable failure
+- Ctrl+Alt+Del is attempted only through the ActiveX `SendKeys` API when present — **never** injected into the local OS
 
-**Not claimed:** graphical split panes; guaranteed Ctrl+Alt+Del injection (never sent to the local workstation as a substitute); dynamic resolution unless validated on the host control.
+## Lifecycle / UX
 
-## Lifecycle
+- Control must be sited before `Connect`
+- WPF airspace: native HWND can obscure WPF overlays (command palette may appear behind RDP)
+- No dynamic display resizing API is claimed without evidence
+- Workspace restore leaves RDP tabs disconnected
 
-Closing an X-Terminal RDP tab disconnects the ActiveX session. It does **not** intentionally log off the remote Windows user.
+## Live validation
 
-## Testing
-
-- Unit: profile validation, secure defaults, capability gating, runtime availability probe.
-- Live RDP against authorized endpoints: **not executed** unless explicitly configured — do not enable Remote Desktop services automatically.
+Authorized RDP endpoint testing is optional and not assumed in CI.
