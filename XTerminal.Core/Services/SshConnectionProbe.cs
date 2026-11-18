@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 
@@ -17,6 +18,7 @@ public static class SshConnectionProbe
     {
         port = port <= 0 ? 22 : port;
         timeoutSeconds = Math.Clamp(timeoutSeconds, 3, 120);
+        var sw = Stopwatch.StartNew();
 
         try
         {
@@ -42,6 +44,10 @@ public static class SshConnectionProbe
             report.Add("DNS", report.FailureMessage, success: false);
             return;
         }
+        finally
+        {
+            report.Duration = sw.Elapsed;
+        }
 
         try
         {
@@ -64,6 +70,10 @@ public static class SshConnectionProbe
                 report.FailureKind = SshFailureKind.Network;
             report.FailureMessage = SshConnectionDiagnosticReport.Sanitize(ex.Message);
             report.Add("TCP", report.FailureMessage, success: false);
+        }
+        finally
+        {
+            report.Duration = sw.Elapsed;
         }
     }
 }

@@ -71,3 +71,4 @@ tools/monaco-fetch/node_modules/
 .xterminal/
 **/integration.local.json
 **/xterminal-it-*/
+artifacts/live-integration/

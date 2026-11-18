@@ -19,7 +19,9 @@
 
 ## Integration testing
 
-- Live private-server tests are opt-in and excluded from GitHub Actions.
+- Live private-server tests are opt-in (`XTERMINAL_IT_ENABLE=1`) and excluded from GitHub Actions.
+- File `enable` alone cannot turn live tests on; the secure runner sets process opt-in after validating local config.
+- Persistent remote shell-integration hooks are not installed by live tests (session-local OSC only).
 - Interactive ConPTY echo checks may be environment-sensitive under automation hosts.
 
 ## Privacy
