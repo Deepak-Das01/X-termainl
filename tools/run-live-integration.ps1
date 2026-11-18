@@ -1,9 +1,27 @@
-# Opt-in live integration runner for X-Terminal (Phase 3E.1).
+﻿# Opt-in live integration runner for X-Terminal (Phase 3E.3).
 # Supports Windows PowerShell 5.1 and PowerShell 7+.
 # Does NOT print or persist the password. Run in an interactive window.
+#
 # Usage:
 #   powershell -NoProfile -File tools\run-live-integration.ps1
-#   pwsh -NoProfile -File tools\run-live-integration.ps1
+#   powershell -NoProfile -File tools\run-live-integration.ps1 -Filter All
+#   powershell -NoProfile -File tools\run-live-integration.ps1 -Filter ShellOsc
+#   powershell -NoProfile -File tools\run-live-integration.ps1 -Filter PortForward
+#   pwsh -NoProfile -File tools\run-live-integration.ps1 -Filter All
+#
+# -Filter values:
+#   All          — Category=LiveIntegration (default)
+#   ShellOsc     — LiveFilter=ShellOsc
+#   PortForward  — LiveFilter=PortForward
+
+[CmdletBinding()]
+param(
+  [ValidateSet('All', 'ShellOsc', 'PortForward')]
+  [string]$Filter = 'All',
+
+  # Final safeguard: abort a hung test host (seconds). Does not replace product lifecycle fixes.
+  [int]$HangTimeoutSeconds = 180
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -27,7 +45,6 @@ function ConvertFrom-SecureStringPlain {
   param([Parameter(Mandatory = $true)][System.Security.SecureString]$Secure)
   $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Secure)
   try {
-    # PtrToStringBSTR preserves exact Unicode content (including whitespace).
     return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
   } finally {
     [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) | Out-Null
@@ -56,7 +73,6 @@ if (-not (Test-Path -LiteralPath $configPath)) {
   exit 2
 }
 
-# Do not overwrite a valid existing configuration.
 try {
   $raw = Get-Content -LiteralPath $configPath -Raw -ErrorAction Stop
   $cfg = $raw | ConvertFrom-Json -ErrorAction Stop
@@ -65,7 +81,6 @@ try {
   exit 2
 }
 
-# Reject prohibited secret fields in the JSON text (case-insensitive property names).
 if ($raw -match '(?i)"\s*(password|passphrase|secret|privateKey|private_key|credential|token|api[_-]?key)\s*"\s*:') {
   Write-Host "ERROR: configuration must not contain passwords, passphrases, or other secrets."
   exit 2
@@ -120,14 +135,22 @@ if ($cfg.PSObject.Properties.Name -contains 'auth' -and $cfg.auth) {
   $auth = [string]$cfg.authMethod
 }
 
-Write-Host "Config: $([string]$cfg.username)@$([string]$cfg.host):$port auth=$auth (fingerprint configured)"
+$testFilter = switch ($Filter) {
+  'ShellOsc' { 'LiveFilter=ShellOsc' }
+  'PortForward' { 'LiveFilter=PortForward' }
+  default { 'Category=LiveIntegration' }
+}
+
+Write-Host "Filter: $Filter ($testFilter)"
+Write-Host "Config: user@host configured; auth=$auth; fingerprint present (details not logged)."
 Write-Host "Password will not be echoed."
+Write-Host "Hang safeguard: blame-hang-timeout ${HangTimeoutSeconds}s (cancelled/hung runs are failures)."
 
 $secure = $null
 $plain = $null
 $code = 1
+$wasCancelled = $false
 
-# Snapshot prior env values for full restore.
 $prior = @{
   XTERMINAL_IT_ENABLE         = $env:XTERMINAL_IT_ENABLE
   XTERMINAL_IT_HOST           = $env:XTERMINAL_IT_HOST
@@ -140,9 +163,14 @@ $prior = @{
 }
 
 try {
-  $secure = Read-Host -Prompt "SSH password for $($cfg.username)@$($cfg.host)" -AsSecureString
-  $plain = ConvertFrom-SecureStringPlain -Secure $secure
+  try {
+    $secure = Read-Host -Prompt "SSH password (input hidden)" -AsSecureString
+  } catch {
+    Write-Host "ERROR: password prompt cancelled or failed."
+    exit 2
+  }
 
+  $plain = ConvertFrom-SecureStringPlain -Secure $secure
   if ($null -eq $plain -or $plain.Length -eq 0) {
     Write-Host "ERROR: password is required."
     exit 2
@@ -160,30 +188,41 @@ try {
     $env:XTERMINAL_IT_KEY_PATH = [string]$cfg.privateKeyPath
   }
 
-  $trx = Join-Path $outDir ("live-" + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + ".trx")
-  Write-Host "Running Category=LiveIntegration (detailed; secrets not logged)..."
-  Write-Host "Results: $trx"
+  $stamp = [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss')
+  $runDir = Join-Path $outDir "run-$Filter-$stamp"
+  New-Item -ItemType Directory -Force -Path $runDir | Out-Null
+  Write-Host "Running live tests (secrets not logged)..."
+  Write-Host "Results directory: artifacts/live-integration/ (gitignored)"
 
   & dotnet test "$repo\XTerminal.Tests\XTerminal.Tests.csproj" `
     -c Release `
-    --filter "Category=LiveIntegration" `
-    --logger "trx;LogFileName=$trx" `
+    --filter $testFilter `
+    --logger "trx;LogFileName=live.trx" `
     --logger "console;verbosity=detailed" `
-    --results-directory $outDir
+    --results-directory $runDir `
+    --blame-hang `
+    --blame-hang-timeout "${HangTimeoutSeconds}s" `
+    --blame-crash
 
+  # Prefer the primary results directory; blame may use its own.
   $code = $LASTEXITCODE
   if ($null -eq $code) { $code = 1 }
 
-  Write-Host "dotnet test exit code: $code"
   if ($code -eq 0) {
-    Write-Host "NOTE: Only executed LiveIntegration tests count. Skipped/gated tests are not live passes."
+    Write-Host "dotnet test exit code: 0"
+    Write-Host "NOTE: Only executed live tests count. Skipped/gated tests are not live passes."
+    Write-Host "NOTE: Cancelled or hung runs must not be treated as success (non-zero exit required)."
+  } else {
+    Write-Host "dotnet test exit code: $code (failure, timeout, hang dump, or cancellation)"
   }
 }
+catch {
+  $wasCancelled = $true
+  $code = 1
+  Write-Host "ERROR: live run aborted: $($_.Exception.Message)"
+}
 finally {
-  # Clear password material first.
-  if ($null -ne $plain) {
-    $plain = $null
-  }
+  if ($null -ne $plain) { $plain = $null }
   if ($null -ne $secure) {
     $secure.Dispose()
     $secure = $null
@@ -201,4 +240,5 @@ finally {
   [GC]::Collect()
 }
 
+if ($wasCancelled -and $code -eq 0) { $code = 1 }
 exit $code

@@ -128,32 +128,36 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
         StateChanged?.Invoke();
     }
 
-    public Task StopAsync(Guid id)
-    {
-        if (_active.TryGetValue(id, out var entry))
-        {
-            entry.State = PortForwardRuntimeState.Stopping;
-            entry.LastTransitionUtc = DateTimeOffset.UtcNow;
-            StateChanged?.Invoke();
-            _active.TryRemove(id, out _);
-            try { entry.Port?.Stop(); } catch { /* ignore */ }
-            try
-            {
-                if (entry.Port is not null && entry.Client is not null)
-                    entry.Client.RemoveForwardedPort(entry.Port);
-            }
-            catch { /* ignore */ }
-            try { entry.Port?.Dispose(); } catch { /* ignore */ }
-            if (entry.UsesSharedConnection)
-                entry.Lease?.Dispose();
-            else
-                DisposeClient(entry.Client, entry.Ownership);
-            entry.Lease = null;
-            entry.State = PortForwardRuntimeState.Stopped;
-            StateChanged?.Invoke();
-        }
+    public Task StopAsync(Guid id) =>
+        Task.Run(() => StopCore(id));
 
-        return Task.CompletedTask;
+    private void StopCore(Guid id)
+    {
+        if (!_active.TryGetValue(id, out var entry))
+            return;
+
+        entry.State = PortForwardRuntimeState.Stopping;
+        entry.LastTransitionUtc = DateTimeOffset.UtcNow;
+        StateChanged?.Invoke();
+        _active.TryRemove(id, out _);
+        try { entry.Port?.Stop(); } catch { /* ignore */ }
+        try
+        {
+            if (entry.Port is not null && entry.Client is not null)
+                entry.Client.RemoveForwardedPort(entry.Port);
+        }
+        catch { /* ignore */ }
+        try { entry.Port?.Dispose(); } catch { /* ignore */ }
+        if (entry.UsesSharedConnection)
+            entry.Lease?.Dispose();
+        else
+            DisposeClient(entry.Client, entry.Ownership);
+        entry.Lease = null;
+        entry.Client = null;
+        entry.Ownership = null;
+        entry.Port = null;
+        entry.State = PortForwardRuntimeState.Stopped;
+        StateChanged?.Invoke();
     }
 
     private static void DisposeClient(SshClient? client, TunnelOwnership? ownership)
@@ -165,8 +169,31 @@ public sealed class PortForwardRuntimeService : IAsyncDisposable
         }
 
         if (client is null) return;
-        try { if (client.IsConnected) client.Disconnect(); } catch { /* ignore */ }
-        try { client.Dispose(); } catch { /* ignore */ }
+
+        // SSH.NET Disconnect can block indefinitely when forwarded ports are winding down.
+        // Bound the teardown so callers (and live tests) cannot hang forever.
+        try
+        {
+            var done = Task.Run(() =>
+            {
+                try
+                {
+                    if (client.IsConnected)
+                        client.Disconnect();
+                }
+                catch { /* ignore */ }
+
+                try { client.Dispose(); } catch { /* ignore */ }
+            });
+            if (!done.Wait(TimeSpan.FromSeconds(8)))
+            {
+                try { client.Dispose(); } catch { /* ignore */ }
+            }
+        }
+        catch
+        {
+            try { client.Dispose(); } catch { /* ignore */ }
+        }
     }
 
     public async Task RestartAsync(PortForwardDefinition def, SshSessionRecord session, CancellationToken ct = default)

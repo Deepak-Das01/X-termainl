@@ -60,8 +60,16 @@ Do **not** put a password, passphrase, or other secret field in this file. The r
 From the repository root, in an **interactive** PowerShell window (5.1 or 7+):
 
 ```powershell
+# Full live suite
 powershell -NoProfile -File tools\run-live-integration.ps1
-# or: pwsh -NoProfile -File tools\run-live-integration.ps1
+powershell -NoProfile -File tools\run-live-integration.ps1 -Filter All
+
+# Selective live tests
+powershell -NoProfile -File tools\run-live-integration.ps1 -Filter ShellOsc
+powershell -NoProfile -File tools\run-live-integration.ps1 -Filter PortForward
+
+# Optional hang safeguard (default 180s)
+powershell -NoProfile -File tools\run-live-integration.ps1 -HangTimeoutSeconds 240
 ```
 
 The script:
@@ -69,10 +77,11 @@ The script:
 1. Validates existing `%USERPROFILE%\.xterminal\integration.local.json` (does not overwrite a valid file).
 2. Requires `enable: true` and a non-empty expected host-key fingerprint.
 3. Prompts for a password without echoing it; preserves exact characters.
-4. Sets process environment variables, runs `--filter Category=LiveIntegration`.
-5. Restores prior environment values (including clearing the password) in `finally`.
-6. Propagates the `dotnet test` exit code.
-7. Writes sanitized TRX output under `artifacts/live-integration/` (gitignored).
+4. Sets process environment variables; filter depends on `-Filter` (`All` → `Category=LiveIntegration`, `ShellOsc` / `PortForward` → `LiveFilter=…`).
+5. Runs `dotnet test` with `--blame-hang` / `--blame-crash` as a final hang safeguard.
+6. Restores prior environment values (including clearing the password) in `finally`.
+7. Propagates the actual `dotnet test` exit code (cancelled/hung runs are failures).
+8. Writes TRX/blame artifacts under `artifacts/live-integration/` (gitignored).
 
 ## What the live suite covers
 

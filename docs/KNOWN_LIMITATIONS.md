@@ -24,6 +24,8 @@
 - Persistent remote shell-integration hooks are not installed by live tests (session-local OSC only).
 - SFTP chmod uses POSIX bitmasks internally; SSH.NET requires a one-time conversion to octal-digit mode at the API boundary.
 - Diagnostic clipboard export redacts endpoints by default; auth-method labels are retained.
+- SSH shell disconnect bounds read-loop and client teardown so dispose cannot hang indefinitely on SSH.NET ReadAsync.
+- Live private-server tests are serialized in one xUnit collection to reduce authorized-host contention.
 - Interactive ConPTY echo checks may be environment-sensitive under automation hosts.
 
 ## Privacy

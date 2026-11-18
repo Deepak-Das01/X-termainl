@@ -115,7 +115,9 @@ internal sealed class LiveIntegrationHarness : IAsyncDisposable
             PrivateKeyPath = config.PrivateKeyPath,
             StrictHostKeyChecking = true,
             ConnectionTimeoutSeconds = 30,
-            KeepAliveIntervalSeconds = 30
+            KeepAliveIntervalSeconds = 30,
+            // Live tests must not AutoReconnect during intentional dispose (avoids hang loops).
+            AutoReconnect = false
         };
 
         if (config.AuthMethod == SshAuthMethod.Password && config.Password is not null)

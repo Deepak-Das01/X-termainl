@@ -8,10 +8,10 @@ Phase 3E hardens opt-in live integration infrastructure. Phase 3E.1 added real a
 
 **Live validation status:** code fixes landed; full 10/10 confirmation requires the developer to re-run `tools/run-live-integration.ps1`.
 
-## Baseline (3E.2)
+## Baseline (3E.3)
 
-- Prior checkpoint: Phase 3E.1 (`5acf342`)
-- Filtered automated suite: **147** passed (Release)
+- Prior checkpoint: Phase 3E.2 (`419277a`)
+- Filtered automated suite: preserved / extended (see 3E.3 commit notes)
 - Live discovery count: **10**
 - GitHub Actions excludes `LiveIntegration` and `LocalConPtyInteractive`
 
@@ -20,9 +20,9 @@ Phase 3E hardens opt-in live integration infrastructure. Phase 3E.1 added real a
 | Task | Status |
 |------|--------|
 | Live gate / probe / auth suite (3E.1) | Completed |
-| SFTP POSIX↔SSH.NET permission boundary (3E.2) | Completed (unit + awaiting live rerun) |
-| Session-local OSC live harness (3E.2) | Completed (unit + awaiting live rerun) |
-| Diagnostic privacy export (3E.2) | Completed (unit + awaiting live rerun) |
+| SFTP / diagnostic privacy (3E.2) | Completed (live-validated for those cases) |
+| SSH dispose deadlock / forward teardown hang (3E.3) | Completed (unit; awaiting live rerun) |
+| Bounded live waits + selective runner filters (3E.3) | Completed |
 | Developer live 10/10 confirmation | Pending interactive rerun |
 
 ## How to run live testing

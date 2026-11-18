@@ -31,6 +31,8 @@ public sealed class SshSessionHost : ISessionHost
     private short _rows = 40;
     private int _reconnectAttempt;
     private int _reconnectGate;
+    /// <summary>Set while intentionally tearing down — suppresses AutoReconnect from the read loop.</summary>
+    private int _intentionalDisconnect;
 
     public SshSessionHost(
         ISecretStore secrets,
@@ -155,6 +157,7 @@ public sealed class SshSessionHost : ISessionHost
 
     private async Task ConnectCoreAsync(CancellationToken externalToken)
     {
+        Interlocked.Exchange(ref _intentionalDisconnect, 0);
         _connectCts = CancellationTokenSource.CreateLinkedTokenSource(externalToken);
         var token = _connectCts.Token;
         SetState(ConnectionState.Connecting, $"Connecting to {_record!.Host}…");
@@ -499,7 +502,8 @@ public sealed class SshSessionHost : ISessionHost
         catch (SshConnectionException) { }
         finally
         {
-            if (State is ConnectionState.Connected or ConnectionState.Reconnecting)
+            if (State is ConnectionState.Connected or ConnectionState.Reconnecting &&
+                Volatile.Read(ref _intentionalDisconnect) == 0)
             {
                 SetState(ConnectionState.Disconnected, "Disconnected");
                 Closed?.Invoke();
@@ -509,6 +513,12 @@ public sealed class SshSessionHost : ISessionHost
                     _reconnectAttempt++;
                     _ = ReconnectAsync(CancellationToken.None);
                 }
+            }
+            else if (Volatile.Read(ref _intentionalDisconnect) != 0 &&
+                     State is ConnectionState.Connected or ConnectionState.Reconnecting)
+            {
+                SetState(ConnectionState.Disconnected, "Disconnected");
+                Closed?.Invoke();
             }
         }
     }
@@ -555,13 +565,35 @@ public sealed class SshSessionHost : ISessionHost
 
     private async Task DisconnectCoreAsync()
     {
+        // Mark intentional teardown before cancelling I/O so ReadLoop does not AutoReconnect.
+        Interlocked.Exchange(ref _intentionalDisconnect, 1);
+
         try { _latencyCts?.Cancel(); } catch { /* ignore */ }
         LatencyMs = null;
 
         try { _readCts?.Cancel(); } catch { /* ignore */ }
+
+        // Dispose the shell BEFORE awaiting the read loop. SSH.NET ShellStream.ReadAsync often
+        // ignores CancellationToken until the stream is closed — awaiting first deadlocks dispose.
+        try { _shell?.Dispose(); } catch { /* ignore */ }
+        _shell = null;
+
         if (_readTask is not null)
         {
-            try { await _readTask.ConfigureAwait(false); } catch { /* ignore */ }
+            try
+            {
+                await _readTask.WaitAsync(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // Read loop did not exit in time; continue teardown.
+            }
+            catch
+            {
+                // ignore
+            }
+
+            _readTask = null;
         }
 
         foreach (var forward in _forwards)
@@ -578,9 +610,6 @@ public sealed class SshSessionHost : ISessionHost
 
         _forwards.Clear();
 
-        try { _shell?.Dispose(); } catch { /* ignore */ }
-        _shell = null;
-
         // Release shared lease first — manager disposes the client only when no leases remain.
         var lease = _shellLease;
         _shellLease = null;
@@ -588,14 +617,12 @@ public sealed class SshSessionHost : ISessionHost
 
         if (_ownsClientExclusively)
         {
-            try { if (_client?.IsConnected == true) _client.Disconnect(); } catch { /* ignore */ }
-            try { _client?.Dispose(); } catch { /* ignore */ }
+            await DisconnectClientBoundedAsync(_client).ConfigureAwait(false);
+            _client = null;
 
             for (var i = _jumpChainClients.Count - 1; i >= 0; i--)
             {
-                var hop = _jumpChainClients[i];
-                try { if (hop.IsConnected) hop.Disconnect(); } catch { /* ignore */ }
-                try { hop.Dispose(); } catch { /* ignore */ }
+                await DisconnectClientBoundedAsync(_jumpChainClients[i]).ConfigureAwait(false);
             }
         }
 
@@ -603,6 +630,33 @@ public sealed class SshSessionHost : ISessionHost
         _client = null;
         _jumpClient = null;
         _ownsClientExclusively = false;
+    }
+
+    private static async Task DisconnectClientBoundedAsync(SshClient? client)
+    {
+        if (client is null) return;
+        try
+        {
+            await Task.Run(() =>
+            {
+                try
+                {
+                    if (client.IsConnected)
+                        client.Disconnect();
+                }
+                catch { /* ignore */ }
+
+                try { client.Dispose(); } catch { /* ignore */ }
+            }).WaitAsync(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            try { client.Dispose(); } catch { /* ignore */ }
+        }
+        catch
+        {
+            try { client.Dispose(); } catch { /* ignore */ }
+        }
     }
 
     private void WriteSystem(string text) => OutputReceived?.Invoke(Encoding.UTF8.GetBytes(text));

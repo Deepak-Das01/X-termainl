@@ -516,7 +516,7 @@ Named workspaces, layout restore with opt-in SSH reconnect, shortcut recording w
 
 ### Phase 3E — Live integration harness and stability
 
-Isolated AppData profiles, opt-in live test runner, CI filters for private-server tests, validation matrix. Live private-server validation requires the developer secure runner. See [`docs/PHASE3E_REPORT.md`](docs/PHASE3E_REPORT.md), [`docs/INTEGRATION_TESTING.md`](docs/INTEGRATION_TESTING.md), [`docs/VALIDATION_MATRIX.md`](docs/VALIDATION_MATRIX.md), and [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+Isolated AppData profiles, opt-in live test runner, CI filters for private-server tests, validation matrix. Live private-server validation requires the developer secure runner (bounded timeouts; selective `-Filter ShellOsc` / `-Filter PortForward`). See [`docs/PHASE3E_REPORT.md`](docs/PHASE3E_REPORT.md), [`docs/PHASE3E3_REPORT.md`](docs/PHASE3E3_REPORT.md), [`docs/INTEGRATION_TESTING.md`](docs/INTEGRATION_TESTING.md), [`docs/VALIDATION_MATRIX.md`](docs/VALIDATION_MATRIX.md), and [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
@@ -526,19 +526,23 @@ Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
 ```powershell
 # Restore + Release build
-dotnet restore
+dotnet restore XTerminal.sln
 dotnet build XTerminal.sln -c Release
 
-# Run all regression tests
-dotnet test XTerminal.Tests\XTerminal.Tests.csproj -c Release
+# Standard regression (excludes private-server live + interactive ConPTY)
+dotnet test XTerminal.sln -c Release --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive"
+
+# Opt-in live suite (interactive password; existing local config)
+powershell -NoProfile -File tools\run-live-integration.ps1
+powershell -NoProfile -File tools\run-live-integration.ps1 -Filter ShellOsc
+powershell -NoProfile -File tools\run-live-integration.ps1 -Filter PortForward
 
 # If App bin is locked by a running XTerminal.exe:
 dotnet build XTerminal.App\XTerminal.App.csproj -c Release -o .\_build_out
-dotnet test XTerminal.sln -c Release -o .\_build_out
+dotnet test XTerminal.sln -c Release -o .\_build_out --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive"
 ```
 
-
-CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows runner, .NET 8, Release build + tests. No embedded secrets; no automatic GitHub Releases.
+CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows runner, .NET 8, Release build + filtered tests. No embedded secrets; no automatic GitHub Releases.
 
 ---
 

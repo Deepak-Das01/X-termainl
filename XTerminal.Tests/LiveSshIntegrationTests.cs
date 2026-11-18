@@ -11,6 +11,7 @@ namespace XTerminal.Tests;
 /// Excluded from default CI. Use tools/run-live-integration.ps1.
 /// TCP connectivity alone does not prove SSH authentication.
 /// </summary>
+[Collection("LiveIntegration")]
 public class LiveSshIntegrationTests
 {
     [Fact]

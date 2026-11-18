@@ -9,6 +9,7 @@ namespace XTerminal.Tests;
 /// Opt-in live SFTP tests using production <see cref="SftpSessionService"/>.
 /// Operates only inside a uniquely named remote temporary directory.
 /// </summary>
+[Collection("LiveIntegration")]
 public class LiveSftpIntegrationTests
 {
     [Fact]

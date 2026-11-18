@@ -26,4 +26,6 @@ Legend: **Unit** · **Protocol live** · **GUI** · **E2E** · **Not executed** 
 
 Live private-server rows require a successful interactive run of `tools/run-live-integration.ps1`.
 
-Phase 3E.2 fixed three confirmed live failures (SFTP chmod encoding, session-local OSC await, diagnostic auth-method assertion). Treat protocol-live results as **fixed in code; awaiting developer live rerun** until that run reports full success.
+Phase 3E.2 fixed SFTP chmod / OSC await / diagnostic auth-method issues (partial live confirmation).
+
+Phase 3E.3 fixed SSH dispose deadlock and port-forward disconnect hangs that prevented two live tests from completing. Treat full live success as **awaiting developer rerun** (`tools/run-live-integration.ps1`, optional `-Filter ShellOsc` / `-Filter PortForward`).
