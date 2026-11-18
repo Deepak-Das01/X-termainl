@@ -194,9 +194,26 @@ public class LiveSshIntegrationTests
              s.Message.Contains("Authentication", StringComparison.OrdinalIgnoreCase) ||
              s.Phase.Contains("SSH", StringComparison.OrdinalIgnoreCase)));
 
-        var export = report.ToClipboardText();
-        Assert.DoesNotContain("password", export, StringComparison.OrdinalIgnoreCase);
+        var sanitized = report.ToClipboardText(DiagnosticExportMode.SanitizedPublic);
+        // Auth method labels are not secrets and may appear (e.g. "Auth: Password").
+        Assert.Contains("Auth:", sanitized, StringComparison.Ordinal);
+        if (!string.IsNullOrWhiteSpace(report.AuthMethod))
+            Assert.Contains(report.AuthMethod, sanitized, StringComparison.Ordinal);
+
+        // Private endpoints must not appear in the sanitized public export.
+        Assert.DoesNotContain(config.Host, sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(config.Username, sanitized, StringComparison.Ordinal);
+        Assert.Contains("[redacted-host]", sanitized, StringComparison.Ordinal);
+
+        // Actual credential values must never appear — assert without dumping the export.
         if (config.Password is not null)
-            Assert.DoesNotContain(config.Password, export, StringComparison.Ordinal);
+        {
+            Assert.False(
+                report.ExportContainsSecret(config.Password, DiagnosticExportMode.SanitizedPublic),
+                "Sanitized diagnostic export contained the credential value.");
+            Assert.False(
+                report.ExportContainsSecret(config.Password, DiagnosticExportMode.DetailedLocal),
+                "Detailed diagnostic export contained the credential value.");
+        }
     }
 }

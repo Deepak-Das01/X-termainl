@@ -26,19 +26,39 @@ public class LiveShellTunnelDiagnosticsTests
         var oscEvents = new List<ShellIntegrationEvent>();
         var markerOk = "XTOK-" + Guid.NewGuid().ToString("N");
         var markerFail = "XTFAIL-" + Guid.NewGuid().ToString("N");
+        var cwdToken = "/tmp/xterminal-it-" + Guid.NewGuid().ToString("N");
+
         var sawOk = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         var sawFail = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sawDir = new TaskCompletionSource<ShellIntegrationEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sawExit0 = new TaskCompletionSource<ShellIntegrationEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sawExit1 = new TaskCompletionSource<ShellIntegrationEvent>(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        // Subscribe before connect so no output is missed.
         host.OutputReceived += bytes =>
         {
             var text = Encoding.UTF8.GetString(bytes);
             buffer.Append(text);
             foreach (var ev in parser.Push(text))
+            {
                 oscEvents.Add(ev);
+                if (ev.Kind == ShellIntegrationEventKind.Directory &&
+                    ev.WorkingDirectory is not null &&
+                    ev.WorkingDirectory.Contains(cwdToken, StringComparison.Ordinal))
+                    sawDir.TrySetResult(ev);
+                if (ev.Kind == ShellIntegrationEventKind.CommandFinished && ev.ExitCode == 0)
+                    sawExit0.TrySetResult(ev);
+                if (ev.Kind == ShellIntegrationEventKind.CommandFinished && ev.ExitCode == 1)
+                    sawExit1.TrySetResult(ev);
+            }
+
             var all = buffer.ToString();
-            if (all.Contains(markerOk, StringComparison.Ordinal))
+            // Prefer marker lines that look like command output (after newline), not only echo.
+            if (all.Contains(markerOk + "\n", StringComparison.Ordinal) ||
+                all.Contains(markerOk + "\r", StringComparison.Ordinal))
                 sawOk.TrySetResult(true);
-            if (all.Contains(markerFail, StringComparison.Ordinal))
+            if (all.Contains(markerFail + "\n", StringComparison.Ordinal) ||
+                all.Contains(markerFail + "\r", StringComparison.Ordinal))
                 sawFail.TrySetResult(true);
         };
 
@@ -56,31 +76,51 @@ public class LiveShellTunnelDiagnosticsTests
         Assert.True(host.IsConnected);
         Assert.Equal(ConnectionState.Connected, host.State);
 
-        // Successful command + session-local OSC 7 (does not modify shell startup files).
-        var cwdProbe = $"/tmp/xterminal-it-{Guid.NewGuid():N}";
+        // Session-local OSC only (does not modify shell startup files).
+        // Use printf hex escapes (\x1b / \x07) so the remote printf emits real ESC/BEL
+        // regardless of shell quoting rules for \033.
+        // Also emit OSC 133 D;<code> for exit-status events without installing hooks.
         host.Write(Encoding.UTF8.GetBytes(
             $"printf '%s\\n' '{markerOk}'; " +
-            $"printf '\\033]7;file://localhost{cwdProbe}\\007'; " +
+            $"printf '\\x1b]7;file://localhost{cwdToken}\\x07'; " +
+            $"printf '\\x1b]133;D;0\\x07'; " +
             $"true\n"));
 
         Assert.True(
             await WaitAsync(sawOk.Task, TimeSpan.FromSeconds(25)),
-            "Successful command marker was not observed.");
+            "Successful command marker was not observed in shell output.");
 
-        // Failed command (non-zero exit) — marker still printed.
+        Assert.True(
+            await WaitAsync(sawDir.Task, TimeSpan.FromSeconds(25)),
+            "Session-local OSC 7 directory event was not parsed from remote output.");
+        var dirEv = await sawDir.Task;
+        Assert.Contains(cwdToken, dirEv.WorkingDirectory ?? "", StringComparison.Ordinal);
+
+        Assert.True(
+            await WaitAsync(sawExit0.Task, TimeSpan.FromSeconds(25)),
+            "Session-local OSC 133 exit=0 event was not parsed from remote output.");
+        var exit0 = await sawExit0.Task;
+        Assert.Equal(0, exit0.ExitCode);
+
         host.Write(Encoding.UTF8.GetBytes(
-            $"printf '%s\\n' '{markerFail}'; false\n"));
+            $"printf '%s\\n' '{markerFail}'; " +
+            $"printf '\\x1b]133;D;1\\x07'; " +
+            $"false\n"));
+
         Assert.True(
             await WaitAsync(sawFail.Task, TimeSpan.FromSeconds(25)),
-            "Failed command marker was not observed.");
+            "Failed command marker was not observed in shell output.");
+        Assert.True(
+            await WaitAsync(sawExit1.Task, TimeSpan.FromSeconds(25)),
+            "Session-local OSC 133 exit=1 event was not parsed from remote output.");
+        var exit1 = await sawExit1.Task;
+        Assert.Equal(1, exit1.ExitCode);
 
-        // OSC events from session-local printf (not from persistent shell integration hooks).
         Assert.Contains(oscEvents, e => e.Kind == ShellIntegrationEventKind.Directory);
+        Assert.Contains(oscEvents, e => e.Kind == ShellIntegrationEventKind.CommandFinished && e.ExitCode == 0);
+        Assert.Contains(oscEvents, e => e.Kind == ShellIntegrationEventKind.CommandFinished && e.ExitCode == 1);
 
-        // Limitation note (asserted as documentation via comment): persistent shell-integration
-        // OSC 133 exit-status hooks require remote shell startup changes, which live tests must not do.
-        // Directory OSC above is session-local only.
-
+        // Explicit: this validates session-local OSC emission + parser, not full Bash/Zsh hooks.
         await host.DisposeAsync();
         Assert.False(host.IsConnected);
     }
@@ -113,7 +153,6 @@ public class LiveShellTunnelDiagnosticsTests
         Assert.Equal(PortForwardRuntimeState.Running, forwards.GetState(def.Id));
         Assert.Null(forwards.GetError(def.Id));
 
-        // End-to-end: TCP connect through the local listener reaches remote loopback:22.
         using (var client = new TcpClient())
         {
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
@@ -125,7 +164,6 @@ public class LiveShellTunnelDiagnosticsTests
         await forwards.StopAsync(def.Id);
         Assert.Equal(PortForwardRuntimeState.Stopped, forwards.GetState(def.Id));
 
-        // Listener should be gone.
         await Assert.ThrowsAnyAsync<Exception>(async () =>
         {
             using var client = new TcpClient();

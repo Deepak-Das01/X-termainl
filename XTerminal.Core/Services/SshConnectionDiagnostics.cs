@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace XTerminal.Core.Services;
 
 public enum SshFailureKind
@@ -19,6 +21,25 @@ public enum SshFailureKind
     ServerChannelRejection,
     Cancelled,
     Unknown
+}
+
+/// <summary>
+/// Clipboard / share export privacy. Authentication method labels (e.g. Password, PrivateKey)
+/// are not secrets; credential values and private endpoints are.
+/// </summary>
+public enum DiagnosticExportMode
+{
+    /// <summary>
+    /// Default shareable export: redacts usernames, hosts, resolved addresses and jump topology.
+    /// Retains auth-method labels. Step messages remain credential-sanitized.
+    /// </summary>
+    SanitizedPublic,
+
+    /// <summary>
+    /// Local troubleshooting view: includes host/user/DNS for the operator.
+    /// Still redacts credential values from messages.
+    /// </summary>
+    DetailedLocal
 }
 
 public sealed class SshDiagnosticStep
@@ -47,16 +68,27 @@ public sealed class SshConnectionDiagnosticReport
     public void Add(string phase, string message, bool success = true) =>
         Steps.Add(new SshDiagnosticStep { Phase = phase, Message = Sanitize(message), Success = success });
 
-    public string ToClipboardText()
+    /// <summary>Sanitized public clipboard export (default).</summary>
+    public string ToClipboardText() => ToClipboardText(DiagnosticExportMode.SanitizedPublic);
+
+    public string ToClipboardText(DiagnosticExportMode mode)
     {
+        var redactEndpoints = mode == DiagnosticExportMode.SanitizedPublic;
+        var host = redactEndpoints ? RedactEndpoint(Host) : Host;
+        var user = redactEndpoints ? RedactUsername(Username) : Username;
+        var dns = redactEndpoints ? RedactEndpoint(ResolvedAddress) : (ResolvedAddress ?? "(n/a)");
+        var jump = redactEndpoints ? RedactJump(JumpHost) : (JumpHost ?? "(none)");
+        // Auth method labels (Password, PrivateKey, …) are not credentials.
+        var auth = string.IsNullOrWhiteSpace(AuthMethod) ? "(n/a)" : AuthMethod;
+
         var lines = new List<string>
         {
             $"X-Terminal SSH diagnostics",
             $"Session: {SessionName}",
-            $"Target: {Username}@{Host}:{Port}",
-            $"Auth: {AuthMethod}",
-            $"Jump: {JumpHost ?? "(none)"}",
-            $"DNS: {ResolvedAddress ?? "(n/a)"}",
+            $"Target: {user}@{host}:{Port}",
+            $"Auth: {auth}",
+            $"Jump: {jump}",
+            $"DNS: {dns}",
             $"Host key: {HostKeyFingerprint ?? "(n/a)"}",
             $"Result: {(FailureKind == SshFailureKind.None ? "OK" : FailureKind.ToString())}",
             $"Detail: {FailureMessage ?? ""}",
@@ -64,18 +96,65 @@ public sealed class SshConnectionDiagnosticReport
             "--- Steps ---"
         };
         foreach (var s in Steps)
-            lines.Add($"{s.Utc:HH:mm:ss.fff} [{(s.Success ? "OK" : "FAIL")}] {s.Phase}: {s.Message}");
+        {
+            var msg = redactEndpoints ? RedactKnownEndpointsInText(s.Message) : s.Message;
+            lines.Add($"{s.Utc:HH:mm:ss.fff} [{(s.Success ? "OK" : "FAIL")}] {s.Phase}: {msg}");
+        }
+
         return string.Join(Environment.NewLine, lines);
     }
 
+    /// <summary>
+    /// Returns true if <paramref name="secret"/> appears in the export. Never throws with the secret value.
+    /// </summary>
+    public bool ExportContainsSecret(string? secret, DiagnosticExportMode mode = DiagnosticExportMode.SanitizedPublic)
+    {
+        if (string.IsNullOrEmpty(secret))
+            return false;
+        var export = ToClipboardText(mode);
+        return export.Contains(secret, StringComparison.Ordinal);
+    }
+
+    private static readonly Regex CredentialAssignment = new(
+        @"(?i)\b(password|passphrase)\s*[=:]\s*\S+",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    /// <summary>
+    /// Redacts credential words and assignment values from free-form error text.
+    /// Structured Auth method labels (e.g. "Auth: Password") are formatted separately in exports
+    /// and are not secrets.
+    /// </summary>
     public static string Sanitize(string message)
     {
         if (string.IsNullOrEmpty(message)) return "";
-        return message
+        var s = CredentialAssignment.Replace(message, "$1=********");
+        return s
             .Replace("password", "********", StringComparison.OrdinalIgnoreCase)
             .Replace("passphrase", "********", StringComparison.OrdinalIgnoreCase)
             .Replace("private key", "key material", StringComparison.OrdinalIgnoreCase);
     }
+
+    private string RedactKnownEndpointsInText(string message)
+    {
+        if (string.IsNullOrEmpty(message)) return message;
+        var s = message;
+        if (!string.IsNullOrWhiteSpace(Host) && Host.Length >= 3)
+            s = s.Replace(Host, "[host]", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(Username) && Username.Length >= 2)
+            s = s.Replace(Username, "[user]", StringComparison.OrdinalIgnoreCase);
+        if (!string.IsNullOrWhiteSpace(ResolvedAddress) && ResolvedAddress.Length >= 3)
+            s = s.Replace(ResolvedAddress, "[addr]", StringComparison.OrdinalIgnoreCase);
+        return s;
+    }
+
+    private static string RedactEndpoint(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "(n/a)" : "[redacted-host]";
+
+    private static string RedactUsername(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "(n/a)" : "[redacted-user]";
+
+    private static string RedactJump(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "(none)" : "[redacted-jump]";
 
     public static SshFailureKind Classify(Exception ex)
     {

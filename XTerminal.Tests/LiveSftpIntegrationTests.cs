@@ -86,12 +86,16 @@ public class LiveSftpIntegrationTests
             Assert.Contains(afterRename, e => e.Name == "payload.renamed.txt");
             Assert.DoesNotContain(afterRename, e => e.Name == "payload.txt");
 
-            // Permissions
-            await sftp.SetPermissionsAsync(renamed, Convert.ToInt16("644", 8), cts.Token);
+            // Permissions — POSIX bitmask into SetPermissionsAsync (SSH.NET boundary converts once).
+            var mode644 = UnixPermissionBits.FromOctal("644").ToMode();
+            Assert.Equal(420, mode644);
+            Assert.Equal(644, UnixPermissionBits.ToSshNetPermissionsMode(mode644));
+            await sftp.SetPermissionsAsync(renamed, mode644, cts.Token);
             var entries = await sftp.ListAsync(remoteDir, cts.Token);
             var entry = Assert.Single(entries, e => e.Name == "payload.renamed.txt");
             Assert.True(entry.ModeBits.HasValue, "ModeBits not returned from listing.");
-            Assert.Equal(Convert.ToInt16("644", 8), (short)(entry.ModeBits!.Value & 0x1FF));
+            Assert.Equal(mode644, (short)(entry.ModeBits!.Value & 0x1FF));
+            Assert.Equal("rw-r--r--", UnixPermissionBits.FromMode((short)(entry.ModeBits.Value & 0xFFF)).ToSymbolic());
 
             // Conflict / overwrite policy (where supported)
             sftp.ConflictPolicy = TransferConflictAction.Overwrite;

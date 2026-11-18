@@ -87,9 +87,13 @@ The script:
 
 ### Known live limitations
 
-- Persistent remote shell-integration hooks (OSC 133 exit status / cwd from shell rc files) are **not** enabled by tests; tests may emit **session-local** OSC sequences only.
+- Persistent remote shell-integration hooks (OSC 133 exit status / cwd from shell rc files) are **not** enabled by tests; tests may emit **session-local** OSC sequences only (and must not claim full Bash/Zsh hook compatibility).
 - Agent / keyboard-interactive auth methods are not supported by the live gate.
 - Recursive folder transfer and rename conflict policy are covered only where the production conflict policy APIs are exercised in the SFTP lifecycle test.
+
+### Phase 3E.2 note
+
+An initial live run reported 7/10. Root causes (SSH.NET permission encoding, session-local OSC emission, diagnostic auth-method assertion) are fixed in code; confirm with a fresh runner execution before counting live validation complete. See [`PHASE3E2_REPORT.md`](PHASE3E2_REPORT.md).
 
 ## CI / default unit suite
 

@@ -60,8 +60,10 @@ public class Phase3FunctionalTests
         report.Add("Auth", "permission denied (password)");
         Assert.DoesNotContain("password", report.FailureMessage ?? "", StringComparison.OrdinalIgnoreCase);
         Assert.All(report.Steps, s => Assert.DoesNotContain("password", s.Message, StringComparison.OrdinalIgnoreCase));
-        var text = report.ToClipboardText();
+        var text = report.ToClipboardText(DiagnosticExportMode.SanitizedPublic);
         Assert.Contains("********", text);
         Assert.DoesNotContain("bad password", text, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Auth: PrivateKey", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("example.com", text, StringComparison.OrdinalIgnoreCase);
     }
 }

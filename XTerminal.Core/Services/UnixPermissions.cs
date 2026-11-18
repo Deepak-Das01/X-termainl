@@ -3,6 +3,12 @@ namespace XTerminal.Core.Services;
 /// <summary>
 /// Unix permission bits for chmod UI. Special bits (setuid/setgid/sticky) are tracked so
 /// permission edits do not silently clear them when applying owner/group/other changes.
+/// <para>
+/// Internal representation is a POSIX bitmask (e.g. 0644 == 420 decimal).
+/// SSH.NET <c>ChangePermissions</c>/<c>SetPermissions</c> expects a different encoding:
+/// decimal digits that look like octal (e.g. 644, 4755) — convert only at that API boundary
+/// via <see cref="ToSshNetPermissionsMode"/>.
+/// </para>
 /// </summary>
 public sealed class UnixPermissionBits
 {
@@ -114,4 +120,49 @@ public sealed class UnixPermissionBits
         $"{(OwnerRead ? 'r' : '-')}{(OwnerWrite ? 'w' : '-')}{(OwnerExecute ? (SetUid ? 's' : 'x') : (SetUid ? 'S' : '-'))}" +
         $"{(GroupRead ? 'r' : '-')}{(GroupWrite ? 'w' : '-')}{(GroupExecute ? (SetGid ? 's' : 'x') : (SetGid ? 'S' : '-'))}" +
         $"{(OtherRead ? 'r' : '-')}{(OtherWrite ? 'w' : '-')}{(OtherExecute ? (Sticky ? 't' : 'x') : (Sticky ? 'T' : '-'))}";
+
+    /// <summary>
+    /// Human-facing octal digit string including special bits when present (e.g. "644", "4755").
+    /// </summary>
+    public string ToOctalString()
+    {
+        var mode = ToMode();
+        var special = (mode >> 9) & 7;
+        var user = (mode >> 6) & 7;
+        var group = (mode >> 3) & 7;
+        var other = mode & 7;
+        return special == 0
+            ? $"{user}{group}{other}"
+            : $"{special}{user}{group}{other}";
+    }
+
+    /// <summary>
+    /// Converts a POSIX permission bitmask to the encoding required by SSH.NET
+    /// <c>SftpClient.ChangePermissions</c> / <c>SftpFileAttributes.SetPermissions</c>.
+    /// Those APIs interpret the short as decimal digits 0–7 (644, 755, 1777), not as 0o644.
+    /// </summary>
+    public static short ToSshNetPermissionsMode(short posixBitmask)
+    {
+        var special = (posixBitmask >> 9) & 7;
+        var user = (posixBitmask >> 6) & 7;
+        var group = (posixBitmask >> 3) & 7;
+        var other = posixBitmask & 7;
+        return (short)(special * 1000 + user * 100 + group * 10 + other);
+    }
+
+    /// <summary>Inverse of <see cref="ToSshNetPermissionsMode"/> for tests and interop.</summary>
+    public static short FromSshNetPermissionsMode(short sshNetMode)
+    {
+        if (sshNetMode is < 0 or > 7777)
+            throw new ArgumentOutOfRangeException(nameof(sshNetMode));
+        var special = sshNetMode / 1000;
+        var rem = sshNetMode % 1000;
+        var user = rem / 100;
+        rem %= 100;
+        var group = rem / 10;
+        var other = rem % 10;
+        if (special is > 7 || user is > 7 || group is > 7 || other is > 7)
+            throw new ArgumentOutOfRangeException(nameof(sshNetMode), "SSH.NET mode digits must be 0–7.");
+        return (short)((special << 9) | (user << 6) | (group << 3) | other);
+    }
 }

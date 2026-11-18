@@ -302,6 +302,9 @@ public sealed class SftpSessionService : IAsyncDisposable
 
     /// <summary>
     /// Sets Unix permission bits on a remote path (chmod). Does not change ownership (no chown).
+    /// <paramref name="mode"/> is a POSIX bitmask (e.g. 0644 == 420). Converted once at the
+    /// SSH.NET boundary — <see cref="Renci.SshNet.SftpClient.ChangePermissions"/> expects
+    /// octal-looking decimal digits (644), not the bitmask.
     /// </summary>
     public async Task SetPermissionsAsync(string path, short mode, CancellationToken cancellationToken = default)
     {
@@ -313,7 +316,9 @@ public sealed class SftpSessionService : IAsyncDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // chmod only — never chown / change owner or group.
-                client.ChangePermissions(path, mode);
+                // SSH.NET SetPermissions divides by 1000/100/10 — pass 644, not 0o644 (420).
+                var sshNetMode = UnixPermissionBits.ToSshNetPermissionsMode(mode);
+                client.ChangePermissions(path, sshNetMode);
             }, cancellationToken);
         }
         catch (Exception ex) { throw MapAndWrap(ex); }

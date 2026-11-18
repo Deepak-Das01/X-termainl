@@ -312,7 +312,7 @@ Example profile values for documentation:
 ## SFTP file management
 
 - Browse, upload, download with a real transfer queue (progress, speed, ETA, cancel, retry)
-- Conflict policies, path-traversal protection, remote permission editing (including setuid/setgid/sticky)
+- Conflict policies, path-traversal protection, remote permission editing (including setuid/setgid/sticky). Internal mode bits are POSIX bitmasks; SSH.NET chmod uses a one-time boundary conversion to octal-digit encoding.
 - Integrated remote editor with conflict detection
 - Drag-and-drop uploads and directory search
 - Optional **follow terminal working directory** when shell integration reports CWD for the **same** SSH session (debounced; never auto-transfers)
@@ -392,7 +392,7 @@ From Sessions → Diagnose (or palette **Show Connection Diagnostics**):
 4. Jump-host progression (when configured)  
 5. SSH negotiation / authentication (respects host-key policy)  
 
-Exports are sanitized (no passwords/passphrases/keys). TCP success is not presented as SSH latency or a fake “connection quality” percentage.
+Clipboard export defaults to a **sanitized public** view: credential values are redacted, and private hosts/usernames/addresses are replaced with placeholders. Authentication **method** labels (for example `Password` or `PrivateKey`) are not secrets and may appear. A detailed local view remains available for on-box troubleshooting. TCP success is not presented as SSH latency or a fake “connection quality” percentage.
 
 ---
 

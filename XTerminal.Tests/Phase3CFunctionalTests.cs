@@ -146,11 +146,17 @@ public class Phase3CFunctionalTests
             FailureMessage = SshConnectionDiagnosticReport.Sanitize("permission denied (password)")
         };
         report.Add("Auth", "bad passphrase supplied");
-        var text = report.ToClipboardText();
-        Assert.DoesNotContain("permission denied (password)", text, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("bad passphrase", text, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("********", text);
-        Assert.Contains("server.example.com", text);
+        var sanitized = report.ToClipboardText(DiagnosticExportMode.SanitizedPublic);
+        Assert.DoesNotContain("permission denied (password)", sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("bad passphrase", sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("********", sanitized);
+        Assert.DoesNotContain("server.example.com", sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("[redacted-host]", sanitized, StringComparison.Ordinal);
+        Assert.Contains("Auth: PrivateKey", sanitized, StringComparison.Ordinal);
+
+        var detailed = report.ToClipboardText(DiagnosticExportMode.DetailedLocal);
+        Assert.Contains("server.example.com", detailed, StringComparison.Ordinal);
+        Assert.Contains("Auth: PrivateKey", detailed, StringComparison.Ordinal);
     }
 
     [Fact]
