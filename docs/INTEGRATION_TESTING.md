@@ -100,9 +100,9 @@ The script:
 - Agent / keyboard-interactive auth methods are not supported by the live gate.
 - Recursive folder transfer and rename conflict policy are covered only where the production conflict policy APIs are exercised in the SFTP lifecycle test.
 
-### Phase 3E.2 note
+### Live validation (Phase 3E.3)
 
-An initial live run reported 7/10. Root causes (SSH.NET permission encoding, session-local OSC emission, diagnostic auth-method assertion) are fixed in code; confirm with a fresh runner execution before counting live validation complete. See [`PHASE3E2_REPORT.md`](PHASE3E2_REPORT.md).
+Authorized private-server suite confirmed **10/10** via `tools/run-live-integration.ps1` (interactive password; TRX under gitignored `artifacts/live-integration/`). See [`PHASE3E3_REPORT.md`](PHASE3E3_REPORT.md).
 
 ## CI / default unit suite
 

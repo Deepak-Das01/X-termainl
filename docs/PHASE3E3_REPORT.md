@@ -29,11 +29,16 @@ Sanitized milestone report. No credentials, private hosts, fingerprints, or abso
 - Shell/port tests use bounded `WaitAsync`/`ExpectAsync`, unsubscribe handlers, and bounded `DisposeAsync`.
 - Runner adds `-Filter` and `--blame-hang` as a final safeguard.
 
-## Live validation status (after hang fix)
+## Live validation status
 
-Developer re-run: **9/10** passed (port-forward recovered). Remaining failure was Shell OSC marker wait — compound `\x` printf line + overly strict line matching. Follow-up sends one command per write (matching the already-passing interactive shell test) and uses quote-aware marker detection.
+Confirmed on the authorized private server (developer interactive runner):
 
-Do not claim 10/10 until ShellOsc filter passes.
+| Run | Result |
+|-----|--------|
+| `-Filter ShellOsc` | **1/1** passed (~2s) |
+| `-Filter All` (`Category=LiveIntegration`) | **10/10** passed (~3.9s), exit code 0 |
+
+Session-local OSC only — not a claim of full Bash/Zsh hook compatibility.
 
 ```powershell
 powershell -NoProfile -File tools\run-live-integration.ps1

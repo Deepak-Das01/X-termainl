@@ -6,7 +6,7 @@ Sanitized milestone report. No credentials, private hostnames, process identifie
 
 Phase 3E hardens opt-in live integration infrastructure. Phase 3E.1 added real authenticated SSH/SFTP live tests. Phase 3E.2 fixes three confirmed live failures from the first developer run (7/10) without weakening security policy.
 
-**Live validation status:** code fixes landed; full 10/10 confirmation requires the developer to re-run `tools/run-live-integration.ps1`.
+**Live validation status:** **10/10** live integration tests passed on the authorized private server via `tools/run-live-integration.ps1` (developer interactive run; secrets not logged).
 
 ## Baseline (3E.3)
 
@@ -23,7 +23,7 @@ Phase 3E hardens opt-in live integration infrastructure. Phase 3E.1 added real a
 | SFTP / diagnostic privacy (3E.2) | Completed (live-validated for those cases) |
 | SSH dispose deadlock / forward teardown hang (3E.3) | Completed (unit; awaiting live rerun) |
 | Bounded live waits + selective runner filters (3E.3) | Completed |
-| Developer live 10/10 confirmation | Pending interactive rerun |
+| Developer live 10/10 confirmation | **Completed** (interactive runner, exit 0) |
 
 ## How to run live testing
 

@@ -28,4 +28,4 @@ Live private-server rows require a successful interactive run of `tools/run-live
 
 Phase 3E.2 fixed SFTP chmod / OSC await / diagnostic auth-method issues (partial live confirmation).
 
-Phase 3E.3 fixed SSH dispose deadlock and port-forward disconnect hangs that prevented two live tests from completing. Treat full live success as **awaiting developer rerun** (`tools/run-live-integration.ps1`, optional `-Filter ShellOsc` / `-Filter PortForward`).
+Phase 3E.3 fixed SSH dispose / port-forward teardown hangs and Shell OSC harness sequencing. Developer live run: **10/10** passed (`tools/run-live-integration.ps1`).
