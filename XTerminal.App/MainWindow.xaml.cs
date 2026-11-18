@@ -55,7 +55,8 @@ public partial class MainWindow : Window
             new FilesExplorerViewModel(uiState),
             new PortForwardingViewModel(new JsonPortForwardStore(), _sshLibrary, portRuntime),
             new SnippetsViewModel(new JsonSnippetStore()),
-            new HistoryViewModel(new JsonHistoryStore()));
+            new HistoryViewModel(new JsonHistoryStore()),
+            _secrets);
         DataContext = _viewModel;
 
         _viewModel.ThemeChanged += OnThemeChanged;

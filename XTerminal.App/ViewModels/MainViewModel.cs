@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using XTerminal.App.Services;
 using XTerminal.Core.Models;
+using XTerminal.Core.Models.Desktop;
 using XTerminal.Core.Models.Ssh;
 using XTerminal.Core.Security;
 using XTerminal.Core.Services;
@@ -22,6 +23,7 @@ public partial class MainViewModel : ObservableObject
     private readonly ISessionStore _sessionStore;
     private readonly ISettingsStore _settingsStore;
     private readonly SessionHostFactory _hostFactory;
+    private readonly ISecretStore _secrets;
     private readonly RemoteEditorFileService _remoteEditor = new();
     private readonly IWorkspaceLayoutStore _workspaceLayout = new JsonWorkspaceLayoutStore();
     private readonly IWorkspaceProfileStore _workspaceProfiles = new JsonWorkspaceProfileStore();
@@ -110,7 +112,9 @@ public partial class MainViewModel : ObservableObject
     public TerminalGroupTabViewModel? SelectedTerminalGroup => SelectedTab as TerminalGroupTabViewModel;
     public TerminalTabViewModel? SelectedTerminalTab => SelectedTerminalGroup?.ActivePane;
     public EditorTabViewModel? SelectedEditorTab => SelectedTab as EditorTabViewModel;
+    public DesktopTabViewModel? SelectedDesktopTab => SelectedTab as DesktopTabViewModel;
     public bool IsTerminalTabSelected => SelectedTab is TerminalGroupTabViewModel;
+    public bool IsDesktopTabSelected => SelectedTab is DesktopTabViewModel;
     public bool IsEditorTabSelected => SelectedTab is EditorTabViewModel;
 
     public ObservableCollection<ClosedTabRecord> RecentlyClosed { get; } = new();
@@ -158,11 +162,13 @@ public partial class MainViewModel : ObservableObject
         FilesExplorerViewModel filesExplorer,
         PortForwardingViewModel ports,
         SnippetsViewModel snippets,
-        HistoryViewModel history)
+        HistoryViewModel history,
+        ISecretStore? secrets = null)
     {
         _sessionStore = sessionStore;
         _settingsStore = settingsStore;
         _hostFactory = hostFactory;
+        _secrets = secrets ?? new WindowsCredentialStore();
         Sessions = sessionsViewModel;
         Sftp = sftpWorkspace;
         Files = filesExplorer;
@@ -529,6 +535,9 @@ public partial class MainViewModel : ObservableObject
                 if (ed.Remote is not null) _remoteEditor.Cleanup(ed.Remote);
                 await ed.DisposeAsync();
                 break;
+            case DesktopTabViewModel desk:
+                await desk.DisposeAsync();
+                break;
         }
 
         SelectedTab = Tabs.Count == 0 ? null : Tabs[Math.Clamp(index, 0, Tabs.Count - 1)];
@@ -554,6 +563,13 @@ public partial class MainViewModel : ObservableObject
                 Title = g.Title,
                 Glyph = g.Glyph,
                 Session = g.ActivePane is null ? null : Clone(g.ActivePane.Definition)
+            },
+            DesktopTabViewModel d => new()
+            {
+                Kind = ClosedTabKind.Desktop,
+                Title = d.Title,
+                Glyph = d.Glyph,
+                Session = ClonePreservingId(d.Definition)
             },
             EditorTabViewModel e when e.Kind == EditorDocumentKind.Local && e.LocalPath is not null => new()
             {
@@ -647,6 +663,12 @@ public partial class MainViewModel : ObservableObject
 
     private async Task OpenSessionCoreAsync(SessionDefinition session, bool startHosts = true)
     {
+        if (session.Kind is SessionKind.Rdp or SessionKind.Vnc)
+        {
+            await OpenDesktopSessionAsync(session, startHosts);
+            return;
+        }
+
         if (!SessionHostFactory.IsTerminalSessionSupported(session.Kind))
         {
             var label = session.Kind switch
@@ -1055,9 +1077,7 @@ public partial class MainViewModel : ObservableObject
             LocalFilesPath = Files.PathText,
             ActivityBarExpanded = IsActivityBarExpanded,
             UtilityPanelOpen = IsUtilityPanelOpen,
-            ActiveTabId = SelectedTab is TerminalGroupTabViewModel tg ? tg.Id
-                : SelectedTab is EditorTabViewModel et ? et.Id
-                : null
+            ActiveTabId = SelectedTab?.Id
         };
 
         foreach (var tab in Tabs)
@@ -1076,13 +1096,19 @@ public partial class MainViewModel : ObservableObject
                         ? pane.Definition.Shell.ToString()
                         : null,
                     ProtocolKind = pane?.Definition.Kind is SessionKind.Serial or SessionKind.Telnet
+                        or SessionKind.Rdp or SessionKind.Vnc
                         ? pane.Definition.Kind.ToString()
                         : null,
                     SessionProfileId = pane?.Definition.Kind is SessionKind.Serial or SessionKind.Telnet
+                        or SessionKind.Rdp or SessionKind.Vnc
                         ? pane.Definition.Id
                         : null,
-                    Host = pane?.Definition.Kind == SessionKind.Telnet ? pane.Definition.Host : null,
-                    Port = pane?.Definition.Kind == SessionKind.Telnet ? pane.Definition.Port : null,
+                    Host = pane?.Definition.Kind is SessionKind.Telnet or SessionKind.Rdp or SessionKind.Vnc
+                        ? pane.Definition.Host
+                        : null,
+                    Port = pane?.Definition.Kind is SessionKind.Telnet or SessionKind.Rdp or SessionKind.Vnc
+                        ? pane.Definition.Port
+                        : null,
                     SerialPort = pane?.Definition.Kind == SessionKind.Serial ? pane.Definition.SerialPort : null,
                     BaudRate = pane?.Definition.Kind == SessionKind.Serial ? pane.Definition.BaudRate : null,
                     WorkingDirectory = pane?.Definition.WorkingDirectory,
@@ -1105,6 +1131,20 @@ public partial class MainViewModel : ObservableObject
                     EditorIsRemote = ed.Kind == EditorDocumentKind.RemoteSftp,
                     EditorSshSessionId = ed.Remote?.SessionId,
                     EditorLanguage = ed.LanguageId
+                });
+            }
+            else if (tab is DesktopTabViewModel desk)
+            {
+                doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
+                {
+                    TabId = desk.Id,
+                    Kind = "desktop",
+                    Title = desk.Title,
+                    IsPinned = desk.IsPinned,
+                    ProtocolKind = desk.Definition.Kind.ToString(),
+                    SessionProfileId = desk.Definition.Id,
+                    Host = desk.Definition.Host,
+                    Port = desk.Definition.Port
                 });
             }
         }
@@ -1156,6 +1196,17 @@ public partial class MainViewModel : ObservableObject
                             opened++;
                         }
 
+                        continue;
+                    }
+
+                    if (tab.Kind == "desktop")
+                    {
+                        // Graphical desktops restore disconnected; never auto-connect unencrypted VNC/RDP.
+                        if (TryResolveProtocolTab(tab, out var deskDef) && deskDef is not null)
+                        {
+                            await OpenDesktopSessionAsync(deskDef, startHosts: false);
+                            opened++;
+                        }
                         continue;
                     }
 
@@ -1395,7 +1446,7 @@ public partial class MainViewModel : ObservableObject
         definition = null;
         if (string.IsNullOrWhiteSpace(protocolKind) ||
             !Enum.TryParse<SessionKind>(protocolKind, true, out var kind) ||
-            kind is not (SessionKind.Serial or SessionKind.Telnet))
+            kind is not (SessionKind.Serial or SessionKind.Telnet or SessionKind.Rdp or SessionKind.Vnc))
             return false;
 
         if (sessionProfileId is Guid pid)
@@ -1435,6 +1486,21 @@ public partial class MainViewModel : ObservableObject
                 Group = "Telnet",
                 Host = host,
                 Port = port ?? 23,
+                AutoReconnect = false
+            };
+            return true;
+        }
+
+        if (kind is (SessionKind.Rdp or SessionKind.Vnc) && !string.IsNullOrWhiteSpace(host))
+        {
+            definition = new SessionDefinition
+            {
+                Id = sessionProfileId ?? Guid.NewGuid(),
+                Name = string.IsNullOrWhiteSpace(title) ? $"{kind} · {host}" : title!,
+                Kind = kind,
+                Group = kind.ToString(),
+                Host = host,
+                Port = port ?? (kind == SessionKind.Rdp ? 3389 : 5900),
                 AutoReconnect = false
             };
             return true;
@@ -2014,9 +2080,11 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(SelectedTerminalGroup));
         OnPropertyChanged(nameof(SelectedTerminalTab));
         OnPropertyChanged(nameof(SelectedEditorTab));
+        OnPropertyChanged(nameof(SelectedDesktopTab));
         OnPropertyChanged(nameof(ShowCancelConnect));
         OnPropertyChanged(nameof(ShowReconnect));
         OnPropertyChanged(nameof(IsTerminalTabSelected));
+        OnPropertyChanged(nameof(IsDesktopTabSelected));
         OnPropertyChanged(nameof(IsEditorTabSelected));
     }
 
@@ -2064,6 +2132,7 @@ public partial class MainViewModel : ObservableObject
         {
             case ClosedTabKind.LocalShell when record.Session is not null:
             case ClosedTabKind.Ssh when record.Session is not null:
+            case ClosedTabKind.Desktop when record.Session is not null:
                 await OpenSessionCoreAsync(Clone(record.Session));
                 break;
             case ClosedTabKind.EditorLocal when record.LocalPath is not null && File.Exists(record.LocalPath):
@@ -2393,6 +2462,8 @@ public partial class MainViewModel : ObservableObject
             new AppCommand { Id = "ssh.quick", Title = "Quick Connect", Category = CommandCategory.Ssh, Execute = () => _ = QuickConnectAsync() },
             new AppCommand { Id = "serial.new", Title = "New Serial Session", Category = CommandCategory.Sessions, Execute = () => _ = NewSerialSessionAsync() },
             new AppCommand { Id = "telnet.new", Title = "New Telnet Session", Category = CommandCategory.Sessions, Execute = () => _ = NewTelnetSessionAsync() },
+            new AppCommand { Id = "rdp.new", Title = "New RDP Session", Category = CommandCategory.Sessions, Execute = () => _ = NewRdpSessionAsync() },
+            new AppCommand { Id = "vnc.new", Title = "New VNC Session", Category = CommandCategory.Sessions, Execute = () => _ = NewVncSessionAsync() },
             new AppCommand { Id = "ssh.sessions", Title = "Open Sessions", Category = CommandCategory.Sessions, Execute = () => SelectActivity(Activities.First(a => a.Section == ActivitySection.Sessions)) },
             new AppCommand { Id = "ssh.sftp", Title = "Open SFTP", Category = CommandCategory.Sftp, Execute = () => _ = OpenSftpAsync(null) },
             new AppCommand { Id = "ssh.reconnect", Title = "Reconnect", Category = CommandCategory.Ssh, Execute = () => _ = SelectedTerminalTab?.ReconnectCommand.ExecuteAsync(null), CanExecute = () => SelectedTerminalTab is not null },
@@ -2478,9 +2549,10 @@ public partial class MainViewModel : ObservableObject
             SessionGroups.Add(new SessionGroupViewModel(group.Key, group.OrderBy(s => s.Name)));
         }
 
-        // Persist local / serial / telnet profile catalog (SSH sessions live in ssh-sessions.json).
+        // Persist local / serial / telnet / RDP / VNC catalog (SSH sessions live in ssh-sessions.json).
         _ = _sessionStore.SaveAsync(list.Where(s =>
-            s.Kind is SessionKind.LocalShell or SessionKind.Serial or SessionKind.Telnet));
+            s.Kind is SessionKind.LocalShell or SessionKind.Serial or SessionKind.Telnet
+                or SessionKind.Rdp or SessionKind.Vnc));
     }
 
     private void FilterGroups(string query)
@@ -2524,6 +2596,90 @@ public partial class MainViewModel : ObservableObject
         await OpenSessionCoreAsync(window.Result);
         if (window.SaveProfile)
             await PersistLocalProtocolProfileAsync(window.Result);
+    }
+
+    [RelayCommand]
+    private async Task NewRdpSessionAsync()
+    {
+        var window = new Views.RdpConnectWindow { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true || window.Result is null) return;
+        if (window.RememberPassword && !string.IsNullOrEmpty(window.Password))
+            await _secrets.SaveSecretAsync(DesktopSecretKeys.RdpPassword(window.Result.Id), window.Password);
+        else if (!string.IsNullOrEmpty(window.Password))
+            await _secrets.SaveSecretAsync(DesktopSecretKeys.RdpPassword(window.Result.Id), window.Password);
+        await OpenDesktopSessionAsync(window.Result, startHosts: true);
+        if (window.SaveProfile)
+            await PersistLocalProtocolProfileAsync(window.Result);
+    }
+
+    [RelayCommand]
+    private async Task NewVncSessionAsync()
+    {
+        var window = new Views.VncConnectWindow { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true || window.Result is null) return;
+
+        var profile = window.Result.ToVncProfile();
+        if (profile.AuthenticationMode == VncAuthenticationMode.None || profile.AllowUnencrypted)
+        {
+            var store = new JsonVncAcknowledgmentStore();
+            if (!store.IsAcknowledged(profile.Host, profile.Port))
+            {
+                var ack = MessageBox.Show(
+                    VncSecurityPolicy.WarningBody + "\n\nContinue with VNC to this host?",
+                    VncSecurityPolicy.WarningTitle,
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (ack != MessageBoxResult.Yes) return;
+                store.Acknowledge(profile.Host, profile.Port);
+            }
+        }
+
+        if (!string.IsNullOrEmpty(window.Password))
+            await _secrets.SaveSecretAsync(DesktopSecretKeys.VncPassword(window.Result.Id), window.Password);
+        await OpenDesktopSessionAsync(window.Result, startHosts: true);
+        if (window.SaveProfile)
+            await PersistLocalProtocolProfileAsync(window.Result);
+    }
+
+    private async Task OpenDesktopSessionAsync(SessionDefinition session, bool startHosts)
+    {
+        if (session.Kind == SessionKind.Vnc && startHosts)
+        {
+            var profile = session.ToVncProfile();
+            if (profile.AllowUnencrypted || profile.AuthenticationMode == VncAuthenticationMode.None)
+            {
+                var store = new JsonVncAcknowledgmentStore();
+                if (!store.IsAcknowledged(profile.Host, profile.Port))
+                {
+                    var ack = MessageBox.Show(
+                        VncSecurityPolicy.WarningBody + "\n\nContinue with VNC to this host?",
+                        VncSecurityPolicy.WarningTitle,
+                        MessageBoxButton.YesNo,
+                        MessageBoxImage.Warning);
+                    if (ack != MessageBoxResult.Yes) return;
+                    store.Acknowledge(profile.Host, profile.Port);
+                }
+            }
+        }
+
+        var tab = new DesktopTabViewModel(ClonePreservingId(session), _secrets)
+        {
+            IsPlaceholder = !startHosts,
+            Status = startHosts ? "Connecting…" : "Restored · disconnected (reconnect to connect)"
+        };
+        tab.StatusChanged += UpdateStatus;
+        InsertTabOrdered(tab);
+        SelectedTab = tab;
+        if (startHosts)
+        {
+            try { await tab.StartAsync(); }
+            catch (Exception ex)
+            {
+                tab.Status = ex.Message;
+                tab.ConnectionState = ConnectionState.Failed;
+            }
+        }
+        UpdateStatus();
     }
 
     private async Task PersistLocalProtocolProfileAsync(SessionDefinition def)
@@ -2577,6 +2733,24 @@ public partial class MainViewModel : ObservableObject
         AutoReconnect = source.AutoReconnect,
         ConnectionTimeoutSeconds = source.ConnectionTimeoutSeconds,
         TerminalType = source.TerminalType,
+        Domain = source.Domain,
+        DesktopWidth = source.DesktopWidth,
+        DesktopHeight = source.DesktopHeight,
+        ColorDepth = source.ColorDepth,
+        SmartSizing = source.SmartSizing,
+        Fullscreen = source.Fullscreen,
+        RequireNla = source.RequireNla,
+        AuthenticationLevel = source.AuthenticationLevel,
+        RedirectClipboard = source.RedirectClipboard,
+        RedirectDrives = source.RedirectDrives,
+        RedirectPrinters = source.RedirectPrinters,
+        RedirectAudio = source.RedirectAudio,
+        VncAuthMode = source.VncAuthMode,
+        VncReadOnly = source.VncReadOnly,
+        DesktopScaling = source.DesktopScaling,
+        ShareClipboard = source.ShareClipboard,
+        AllowUnencryptedVnc = source.AllowUnencryptedVnc,
+        PersistCredential = source.PersistCredential,
         Extra = new Dictionary<string, string>(source.Extra),
         SshSessionId = source.SshSessionId
     };

@@ -73,5 +73,9 @@ tools/monaco-fetch/node_modules/
 **/xterminal-it-*/
 artifacts/live-integration/
 **/telnet-ack.json
+**/vnc-ack.json
 **/serial-live.local.*
+**/desktop-live.local.*
 XTERMINAL_SERIAL_*
+XTERMINAL_RDP_*
+XTERMINAL_VNC_*

@@ -1,0 +1,57 @@
+<UserControl x:Class="XTerminal.App.Controls.DesktopSessionHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:wf="clr-namespace:System.Windows.Forms.Integration;assembly=WindowsFormsIntegration"
+             Background="{DynamicResource BrushTerminalCanvas}"
+             Focusable="True"
+             KeyDown="OnKeyDown"
+             KeyUp="OnKeyUp">
+  <Grid>
+    <DockPanel>
+      <Border DockPanel.Dock="Top" Padding="10,8" Background="{DynamicResource BrushSurfaceElevated}"
+              BorderBrush="{DynamicResource BrushBorderSoft}" BorderThickness="0,0,0,1">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+          </Grid.ColumnDefinitions>
+          <StackPanel>
+            <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="13" />
+            <TextBlock Text="{Binding Status}" FontSize="11" Foreground="{DynamicResource BrushTextMuted}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding SecurityBanner}" FontSize="11" Foreground="#E8A838" TextWrapping="Wrap"
+                       Margin="0,4,0,0" />
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+            <Button Style="{StaticResource CompactBtn}" Content="Connect" Margin="0,0,6,0"
+                    Click="Connect_OnClick" />
+            <Button Style="{StaticResource CompactBtn}" Content="Disconnect" Margin="0,0,6,0"
+                    Command="{Binding DisconnectCommand}" />
+            <Button Style="{StaticResource CompactBtn}" Content="Reconnect" Margin="0,0,6,0"
+                    Command="{Binding ReconnectCommand}" />
+            <Button Style="{StaticResource CompactBtn}" Content="Fullscreen"
+                    Command="{Binding ToggleFullscreenCommand}" />
+          </StackPanel>
+        </Grid>
+      </Border>
+
+      <Grid>
+        <wf:WindowsFormsHost x:Name="RdpHost" Visibility="Collapsed" />
+        <ScrollViewer x:Name="VncScroller" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      Visibility="Collapsed" Background="#FF101010">
+          <Image x:Name="VncImage" Stretch="Uniform" RenderOptions.BitmapScalingMode="NearestNeighbor"
+                 MouseMove="VncImage_OnMouseMove"
+                 MouseLeftButtonDown="VncImage_OnMouseDown"
+                 MouseLeftButtonUp="VncImage_OnMouseUp"
+                 MouseRightButtonDown="VncImage_OnMouseDown"
+                 MouseRightButtonUp="VncImage_OnMouseUp"
+                 MouseWheel="VncImage_OnMouseWheel" />
+        </ScrollViewer>
+        <Border x:Name="Placeholder" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="16">
+          <TextBlock x:Name="PlaceholderText" Text="Desktop session" Foreground="{DynamicResource BrushTextMuted}"
+                     TextAlignment="Center" TextWrapping="Wrap" MaxWidth="420" />
+        </Border>
+      </Grid>
+    </DockPanel>
+  </Grid>
+</UserControl>
+

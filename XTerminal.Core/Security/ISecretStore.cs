@@ -14,3 +14,10 @@ public static class SshSecretKeys
     public static string JumpPassword(Guid sessionId) => $"XTerminal/SSH/{sessionId:N}/jump-password";
     public static string JumpPassphrase(Guid sessionId) => $"XTerminal/SSH/{sessionId:N}/jump-passphrase";
 }
+
+/// <summary>RDP/VNC secrets are isolated from SSH credential keys.</summary>
+public static class DesktopSecretKeys
+{
+    public static string RdpPassword(Guid sessionId) => $"XTerminal/RDP/{sessionId:N}/password";
+    public static string VncPassword(Guid sessionId) => $"XTerminal/VNC/{sessionId:N}/password";
+}

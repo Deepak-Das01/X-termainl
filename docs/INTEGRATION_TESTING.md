@@ -108,6 +108,10 @@ Authorized private-server suite confirmed **10/10** via `tools/run-live-integrat
 
 `Category=TelnetLoopback` uses an ephemeral `127.0.0.1` listener and production `TelnetSessionHost`. Included in the standard filtered suite. No Telnet OS service is installed.
 
+## VNC loopback (default suite)
+
+`Category=VncLoopback` uses an ephemeral `127.0.0.1` RFB fixture and production `VncRfbClient` / `VncGraphicalSession`. Included in the standard filtered suite. Does not prove compatibility with every real VNC server.
+
 ## Optional serial hardware
 
 ```powershell

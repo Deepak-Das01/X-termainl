@@ -49,9 +49,9 @@ public sealed class SessionHostFactory
         SessionKind.Sftp => new StubSessionHost(SessionKind.Sftp, "SFTP",
             "SFTP is available from the SFTP activity. Terminal SFTP tabs are not used."),
         SessionKind.Rdp => new StubSessionHost(SessionKind.Rdp, "RDP",
-            "RDP is not supported in this release."),
+            "RDP uses graphical desktop tabs (not the terminal host pipeline)."),
         SessionKind.Vnc => new StubSessionHost(SessionKind.Vnc, "VNC",
-            "VNC is not supported in this release."),
+            "VNC uses graphical desktop tabs (not the terminal host pipeline)."),
         SessionKind.X11 => new StubSessionHost(SessionKind.X11, "X11",
             "X11 forwarding UI is not supported in this release."),
         _ => new StubSessionHost(kind, kind.ToString(), "Not supported in this release.")

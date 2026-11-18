@@ -18,7 +18,8 @@ public enum SessionCapability
     BinaryData = 1 << 8,
     LocalEchoOptional = 1 << 9,
     ControlSignals = 1 << 10,
-    PlaintextNetwork = 1 << 11
+    PlaintextNetwork = 1 << 11,
+    GraphicalDesktop = 1 << 12
 }
 
 public static class SessionCapabilities
@@ -56,6 +57,15 @@ public static class SessionCapabilities
             SessionCapability.Reconnect |
             SessionCapability.ConnectionDiagnostics |
             SessionCapability.LocalEchoOptional |
+            SessionCapability.PlaintextNetwork,
+        SessionKind.Rdp =>
+            SessionCapability.Reconnect |
+            SessionCapability.ConnectionDiagnostics |
+            SessionCapability.GraphicalDesktop,
+        SessionKind.Vnc =>
+            SessionCapability.Reconnect |
+            SessionCapability.ConnectionDiagnostics |
+            SessionCapability.GraphicalDesktop |
             SessionCapability.PlaintextNetwork,
         _ => SessionCapability.None
     };

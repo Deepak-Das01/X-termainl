@@ -145,6 +145,8 @@
           <Button Style="{StaticResource IconBtn}" Content="⌁" ToolTip="SSH Quick Connect" Command="{Binding QuickConnectCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="⛓" ToolTip="New Serial Session" Command="{Binding NewSerialSessionCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="⚠" ToolTip="New Telnet Session" Command="{Binding NewTelnetSessionCommand}" />
+          <Button Style="{StaticResource IconBtn}" Content="🖥" ToolTip="New RDP Session" Command="{Binding NewRdpSessionCommand}" />
+          <Button Style="{StaticResource IconBtn}" Content="🖼" ToolTip="New VNC Session" Command="{Binding NewVncSessionCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="✎" ToolTip="New editor tab" Command="{Binding NewUntitledEditorCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="📂" ToolTip="Open file" Command="{Binding OpenLocalFileCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="💾" ToolTip="Save" Command="{Binding SaveEditorCommand}" />
@@ -293,6 +295,9 @@
             <controls:TerminalWorkspaceHost x:Name="TerminalView"
                                    DataContext="{Binding SelectedTerminalGroup}"
                                    Visibility="{Binding DataContext.IsTerminalTabSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
+            <controls:DesktopSessionHost x:Name="DesktopViewHost"
+                                 DataContext="{Binding SelectedDesktopTab}"
+                                 Visibility="{Binding DataContext.IsDesktopTabSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />
             <controls:EditorHost x:Name="EditorViewHost"
                                  DataContext="{Binding SelectedEditorTab}"
                                  Visibility="{Binding DataContext.IsEditorTabSelected, RelativeSource={RelativeSource AncestorType=Window}, Converter={StaticResource BoolToVis}}" />

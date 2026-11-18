@@ -83,6 +83,8 @@ public sealed class JsonSessionStore : ISessionStore
                 s.Kind == SessionKind.LocalShell ||
                 s.Kind == SessionKind.Serial ||
                 s.Kind == SessionKind.Telnet ||
+                s.Kind == SessionKind.Rdp ||
+                s.Kind == SessionKind.Vnc ||
                 (s.Kind == SessionKind.Ssh && !string.IsNullOrWhiteSpace(s.Host) &&
                  !s.Name.Contains("coming soon", StringComparison.OrdinalIgnoreCase)))
             .ToList();

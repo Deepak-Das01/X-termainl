@@ -57,7 +57,11 @@ X-Terminal is designed as a MobaXterm-class alternative for Windows operators wh
 | SSH | Yes | Yes | Yes | Encrypted; host-key verified |
 | Serial | Yes | No | No | Exclusive COM ownership; no remote resize |
 | Telnet | Yes | No | No | **Unencrypted**; per-host warning |
-| RDP / VNC / X11 | No | — | — | Gated until dedicated milestones |
+| RDP | Graphical tab | No | No | Embedded MsRdpClient9 ActiveX; NLA default |
+| VNC | Graphical tab | No | No | First-party RFB; Auth ≠ encryption |
+| X11 | No | — | — | Gated until dedicated milestone |
+
+See [`docs/RDP.md`](docs/RDP.md), [`docs/VNC.md`](docs/VNC.md), [`docs/REMOTE_DESKTOP_ARCHITECTURE.md`](docs/REMOTE_DESKTOP_ARCHITECTURE.md).
 
 See [`docs/SERIAL_CONSOLE.md`](docs/SERIAL_CONSOLE.md) and [`docs/TELNET_PROTOCOL.md`](docs/TELNET_PROTOCOL.md).
 
@@ -342,6 +346,15 @@ Troubleshooting: port in use, access denied, missing driver, device unplugged �
 
 Optional hardware loopback: set `XTERMINAL_SERIAL_PORT_A` / `XTERMINAL_SERIAL_PORT_B` and run `--filter Category=SerialLiveIntegration`. Not required for CI.
 
+## RDP and VNC (graphical desktop)
+
+Open **New RDP Session** / **New VNC Session** from the toolbar or command palette. These create **graphical desktop tabs**, not terminal panes.
+
+- **RDP:** Embedded Microsoft ActiveX (`MsRdpClient9`). NLA/CredSSP on by default; redirections off; passwords in Credential Manager. See [`docs/RDP.md`](docs/RDP.md).
+- **VNC:** First-party RFB client. Classic VNC Auth is **not** transport encryption; unauthenticated VNC requires explicit acknowledgment. See [`docs/VNC.md`](docs/VNC.md).
+
+Workspace restore leaves RDP/VNC tabs **disconnected** until you reconnect. Graphical split panes are not supported in Phase 4B.
+
 ## Telnet
 
 Telnet is **not encrypted**. Prefer SSH whenever available. Use Telnet only on authorized legacy gear, labs, or management networks where plaintext is acceptable.
@@ -567,6 +580,10 @@ Isolated AppData profiles, opt-in live test runner, CI filters for private-serve
 
 Real `SerialSessionHost` and `TelnetSessionHost` with capability gating, COM discovery, Telnet IAC negotiation, plaintext warnings, loopback Telnet tests, optional serial hardware harness. See [`docs/PHASE4A_REPORT.md`](docs/PHASE4A_REPORT.md), [`docs/SERIAL_CONSOLE.md`](docs/SERIAL_CONSOLE.md), and [`docs/TELNET_PROTOCOL.md`](docs/TELNET_PROTOCOL.md).
 
+### Phase 4B — RDP and VNC remote desktop
+
+Graphical desktop tabs (`DesktopTabViewModel`), embedded RDP ActiveX, first-party VNC RFB client, Credential Manager isolation, workspace restore disconnected-by-default, VNC loopback tests. See [`docs/PHASE4B_REPORT.md`](docs/PHASE4B_REPORT.md).
+
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
 ---
@@ -601,7 +618,9 @@ CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows 
 |-------|--------|
 | Serial console | Implemented (Phase 4A); hardware live optional |
 | Telnet | Implemented (Phase 4A); plaintext; loopback-tested |
-| RDP / VNC / X11 | Not implemented (gated stubs) |
+| RDP | Implemented (Phase 4B); ActiveX; live endpoint optional |
+| VNC | Implemented (Phase 4B); RFB Raw/CopyRect; loopback-tested |
+| X11 | Not implemented (gated) |
 | Per-forward byte counters | Not available from SSH.NET — UI shows **N/A** |
 | Shell integration without hooks | Remains Detecting/Unavailable; terminal still works |
 | SSH agent / Pageant | Default-key fallback only — not a full agent bridge |

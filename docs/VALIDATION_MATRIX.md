@@ -1,24 +1,17 @@
-# Validation matrix (Phase 4A)
+# Validation matrix (Phase 4B)
 
 Legend: **Unit** · **Protocol live** · **GUI** · **E2E** · **Not executed** · **Unsupported**
 
-| Area | Unit | Protocol live | GUI | E2E | Notes |
-|------|------|---------------|-----|-----|-------|
-| Local PowerShell ConPTY | Yes | Yes (smoke) | Sanity | Not executed | |
-| SSH / SFTP / shell / forward | Yes | Opt-in 10 tests | Not executed this checkpoint | — | Prior Phase 3E.3: 10/10 |
-| Serial profile validation | Yes | — | Sanity | — | Rejects invalid configs |
-| Serial port discovery | Yes (abstraction) | Optional hardware | Sanity | — | No open-to-probe |
-| SerialSessionHost | Yes (ownership/hex/caps) | Optional `SerialLiveIntegration` | Sanity | — | Excluded from CI filter |
-| Telnet negotiation | Yes | Loopback | Sanity | — | IAC / options / loops |
-| TelnetSessionHost | Yes | `TelnetLoopback` (5) | Sanity | — | Production host |
-| Telnet security policy | Yes | — | Sanity | — | Per-host ack |
-| Capability gating | Yes | — | Sanity | — | No SFTP/tunnels on Serial/Telnet |
-| Workspace restore | Yes (fields) | — | Sanity | — | Serial never auto-open |
-| RDP / VNC / X11 | Gated | Unsupported | N/A | N/A | |
+| Area | Unit | Protocol live | GUI | Notes |
+|------|------|---------------|-----|-------|
+| Prior Phase 4A Serial/Telnet | Yes | Telnet loopback | Partial | Serial hardware outstanding |
+| RDP profiles / security defaults | Yes | Not executed | Not executed | ActiveX availability probed |
+| RDP embedded ActiveX | Partial | Not executed | Not executed | Requires MsRdpClient9 |
+| VNC RFB client | Yes | `VncLoopback` | Not executed | Raw + CopyRect |
+| VNC security policy | Yes | Loopback None+ack | Not executed | |
+| Graphical workspace tabs | Yes | — | Not executed | Restore disconnected |
+| SSH/SFTP live | Gate | Opt-in 10 | — | Prior Phase 3E.3 |
+| RDP/VNC/X11 terminal hosts | Gated | — | — | Graphical path for RDP/VNC |
 
-Standard filtered suite (Phase 4A): **190** passed  
+Standard filtered suite (Phase 4B): **207** passed  
 (`Category!=LiveIntegration&Category!=LocalConPtyInteractive&Category!=SerialLiveIntegration`).
-
-SSH/SFTP live suite: **discoverable 10**; not re-executed against this checkpoint unless the developer runs `tools/run-live-integration.ps1`.
-
-Serial hardware live: **not executed** unless `XTERMINAL_SERIAL_PORT_A/B` set.

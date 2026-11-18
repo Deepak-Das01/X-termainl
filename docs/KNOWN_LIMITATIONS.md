@@ -2,9 +2,11 @@
 
 ## Protocols
 
-- **Serial (Phase 4A):** Implemented. No SFTP/tunnels; no remote resize; COM ports never auto-open on workspace restore; friendly names may be unavailable; presence ≠ free.
+- **Serial (Phase 4A):** Implemented. No SFTP/tunnels; no remote resize; COM ports never auto-open on workspace restore; friendly names may be unavailable; presence ≠ free. Physical COM validation outstanding without a loopback pair.
 - **Telnet (Phase 4A):** Implemented as plaintext. Not all servers behave identically; many RFC options unsupported; prefer SSH.
-- RDP, VNC, and X11 remain **not implemented** (gated).
+- **RDP (Phase 4B):** Embedded MsRdpClient9 ActiveX. WPF airspace may occlude overlays; no graphical split panes; live endpoint validation not executed by default; Ctrl+Alt+Del not faked locally.
+- **VNC (Phase 4B):** First-party RFB client (Raw/CopyRect). Classic VNC Auth is not transport encryption; TLS VNC not implemented; live external servers not assumed.
+- X11 remains **not implemented** (gated).
 - SSH agent / Pageant: default-key fallback only — not a full agent bridge.
 - Independent jump-host credentials remain limited.
 

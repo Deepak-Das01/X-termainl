@@ -11,6 +11,7 @@ public interface IWorkspaceTab
     bool IsEditor { get; }
     bool IsPinned { get; set; }
     bool IsTerminalGroup { get; }
+    bool IsDesktopTab => false;
 }
 
 public enum ClosedTabKind
@@ -19,7 +20,8 @@ public enum ClosedTabKind
     Ssh,
     EditorLocal,
     EditorRemote,
-    Sftp
+    Sftp,
+    Desktop
 }
 
 public sealed class ClosedTabRecord
