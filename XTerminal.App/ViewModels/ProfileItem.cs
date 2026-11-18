@@ -37,6 +37,7 @@ public static class ShellPresentation
             {
                 SessionKind.Ssh => "🔐",
                 SessionKind.Sftp => "📁",
+                SessionKind.Telnet => "⚠",
                 SessionKind.Rdp => "🖥",
                 SessionKind.Vnc => "🖥",
                 SessionKind.Serial => "⛓",
@@ -47,5 +48,10 @@ public static class ShellPresentation
     public static string AccentFor(SessionDefinition definition) =>
         definition.Kind == SessionKind.LocalShell
             ? Accent(definition.Shell)
-            : "#60CDFF";
+            : definition.Kind switch
+            {
+                SessionKind.Telnet => "#E8A838",
+                SessionKind.Serial => "#8BD18B",
+                _ => "#60CDFF"
+            };
 }

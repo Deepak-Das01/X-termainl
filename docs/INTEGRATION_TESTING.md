@@ -104,10 +104,24 @@ The script:
 
 Authorized private-server suite confirmed **10/10** via `tools/run-live-integration.ps1` (interactive password; TRX under gitignored `artifacts/live-integration/`). See [`PHASE3E3_REPORT.md`](PHASE3E3_REPORT.md).
 
+## Telnet loopback (default suite)
+
+`Category=TelnetLoopback` uses an ephemeral `127.0.0.1` listener and production `TelnetSessionHost`. Included in the standard filtered suite. No Telnet OS service is installed.
+
+## Optional serial hardware
+
+```powershell
+$env:XTERMINAL_SERIAL_PORT_A = "COMx"
+$env:XTERMINAL_SERIAL_PORT_B = "COMy"
+dotnet test XTerminal.sln -c Release --filter "Category=SerialLiveIntegration"
+```
+
+Excluded from CI / standard filter (`Category!=SerialLiveIntegration`). Unset ports ⇒ suite not executed (do not invent COM names).
+
 ## CI / default unit suite
 
 ```text
-dotnet test --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive"
+dotnet test --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive&Category!=SerialLiveIntegration"
 ```
 
-Private-server integration and environment-sensitive interactive ConPTY echo checks are excluded from GitHub Actions.
+Private-server integration, optional serial hardware, and environment-sensitive interactive ConPTY echo checks are excluded from GitHub Actions.

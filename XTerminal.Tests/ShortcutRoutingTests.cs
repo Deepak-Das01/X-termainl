@@ -45,8 +45,12 @@ public class ShortcutRoutingTests
     {
         Assert.True(SessionHostFactory.IsTerminalSessionSupported(SessionKind.LocalShell));
         Assert.True(SessionHostFactory.IsTerminalSessionSupported(SessionKind.Ssh));
-        Assert.False(SessionHostFactory.IsTerminalSessionSupported(SessionKind.Telnet));
+        Assert.True(SessionHostFactory.IsTerminalSessionSupported(SessionKind.Telnet));
+        Assert.True(SessionHostFactory.IsTerminalSessionSupported(SessionKind.Serial));
         Assert.False(SessionHostFactory.IsTerminalSessionSupported(SessionKind.Rdp));
         Assert.False(SessionHostFactory.IsTerminalSessionSupported(SessionKind.Sftp));
+        Assert.False(SessionCapabilities.Has(SessionKind.Serial, SessionCapability.Sftp));
+        Assert.False(SessionCapabilities.Has(SessionKind.Telnet, SessionCapability.PortForwarding));
+        Assert.True(SessionCapabilities.Has(SessionKind.Telnet, SessionCapability.PlaintextNetwork));
     }
 }

@@ -79,9 +79,12 @@ public sealed class JsonSessionStore : ISessionStore
     {
         // Strip misleading legacy "coming soon" remote stubs from older defaults without deleting real data.
         return items
-            .Where(s => s.Kind == SessionKind.LocalShell ||
-                        (s.Kind == SessionKind.Ssh && !string.IsNullOrWhiteSpace(s.Host) &&
-                         !s.Name.Contains("coming soon", StringComparison.OrdinalIgnoreCase)))
+            .Where(s =>
+                s.Kind == SessionKind.LocalShell ||
+                s.Kind == SessionKind.Serial ||
+                s.Kind == SessionKind.Telnet ||
+                (s.Kind == SessionKind.Ssh && !string.IsNullOrWhiteSpace(s.Host) &&
+                 !s.Name.Contains("coming soon", StringComparison.OrdinalIgnoreCase)))
             .ToList();
     }
 }

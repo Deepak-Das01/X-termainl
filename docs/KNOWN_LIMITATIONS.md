@@ -2,7 +2,9 @@
 
 ## Protocols
 
-- RDP, VNC, Telnet, Serial, and X11 are **not implemented** (gated).
+- **Serial (Phase 4A):** Implemented. No SFTP/tunnels; no remote resize; COM ports never auto-open on workspace restore; friendly names may be unavailable; presence ≠ free.
+- **Telnet (Phase 4A):** Implemented as plaintext. Not all servers behave identically; many RFC options unsupported; prefer SSH.
+- RDP, VNC, and X11 remain **not implemented** (gated).
 - SSH agent / Pageant: default-key fallback only — not a full agent bridge.
 - Independent jump-host credentials remain limited.
 
@@ -14,6 +16,8 @@
 ## Workspace restoration
 
 - Restored layout does **not** restore prior process state or terminal buffers.
+- Serial hardware is never auto-connected on restore.
+- Telnet reconnect on restore requires workspace remote-reconnect **and** profile `AutoReconnect`.
 - Remote editor tabs are not auto-reopened without a matching live SFTP session.
 - Unsaved document crash recovery is intentionally disabled by default.
 
@@ -27,7 +31,10 @@
 - SSH shell disconnect bounds read-loop and client teardown so dispose cannot hang indefinitely on SSH.NET ReadAsync.
 - Live private-server tests are serialized in one xUnit collection to reduce authorized-host contention.
 - Interactive ConPTY echo checks may be environment-sensitive under automation hosts.
+- Serial hardware loopback is optional (`Category=SerialLiveIntegration`) and not claimed when ports are unset.
+- Telnet loopback tests use `127.0.0.1` only.
 
 ## Privacy
 
 - Older published history before Phase 3A may still contain machine-specific wording in docs (not rewritten).
+- Telnet acknowledgments are per-host only and store no credentials.

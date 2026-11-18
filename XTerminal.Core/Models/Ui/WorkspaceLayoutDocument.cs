@@ -35,6 +35,13 @@ public sealed class WorkspaceTabLayout
     public Guid? SshSessionId { get; set; }
     public string? LocalShell { get; set; }
     public string? WorkingDirectory { get; set; }
+    /// <summary>SessionKind name for Serial/Telnet workspace leaves (credential-free).</summary>
+    public string? ProtocolKind { get; set; }
+    public Guid? SessionProfileId { get; set; }
+    public string? Host { get; set; }
+    public int? Port { get; set; }
+    public string? SerialPort { get; set; }
+    public int? BaudRate { get; set; }
     public string? EditorPath { get; set; }
     public bool EditorIsRemote { get; set; }
     public Guid? EditorSshSessionId { get; set; }
@@ -54,6 +61,12 @@ public sealed class SplitLayoutNode
     public string? LocalShell { get; set; }
     public string? WorkingDirectory { get; set; }
     public Guid? SshSessionId { get; set; }
+    public string? ProtocolKind { get; set; }
+    public Guid? SessionProfileId { get; set; }
+    public string? Host { get; set; }
+    public int? Port { get; set; }
+    public string? SerialPort { get; set; }
+    public int? BaudRate { get; set; }
     public SplitLayoutNode? First { get; set; }
     public SplitLayoutNode? Second { get; set; }
 }

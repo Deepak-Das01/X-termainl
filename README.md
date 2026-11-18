@@ -1,6 +1,6 @@
 # X-Terminal
 
-**X-Terminal** is a modern Windows terminal, secure remote administration and developer workspace featuring SSH, SFTP, integrated editing, advanced session management, networking tools and intelligent shell integration.
+**X-Terminal** is a modern Windows terminal, secure remote administration and developer workspace featuring SSH, SFTP, Serial console, Telnet (plaintext), integrated editing, advanced session management, networking tools and intelligent shell integration.
 
 > Repository: [Deepak-Das01/X-termainl](https://github.com/Deepak-Das01/X-termainl)
 
@@ -17,6 +17,8 @@ Built with **.NET 8**, **WPF (MVVM)**, **WebView2** (xterm.js + Monaco), **ConPT
 5. [Installation / getting started](#how-to-start-and-stop)
 6. [Local terminals](#local-terminals)
 7. [SSH authentication and jump hosts](#ssh-authentication-and-jump-hosts)
+7a. [Serial console](#serial-console)
+7b. [Telnet](#telnet)
 8. [SFTP file management](#sftp-file-management)
 9. [Shell integration](#shell-integration)
 10. [Command history](#command-history)
@@ -41,12 +43,23 @@ X-Terminal is designed as a MobaXterm-class alternative for Windows operators wh
 
 - Fast local terminals (PowerShell, CMD, WSL) with split panes
 - Secure SSH sessions with host-key verification and Credential Manager secrets
+- Serial console sessions for authorized COM ports
+- Telnet for authorized legacy equipment (plaintext — prefer SSH)
 - SFTP browsing, local files, and an embedded code editor
 - Port forwarding managed beside terminal sessions
 - Snippets, command history, broadcast input, and a command palette
 
-**Supported today:** Local shells (ConPTY) and SSH (interactive + SFTP + forwards).  
-**Not implemented yet:** RDP, VNC, Telnet, Serial, X11 (explicitly gated).
+### Supported protocols
+
+| Protocol | Terminal | SFTP | Port forward | Notes |
+|----------|----------|------|--------------|--------|
+| Local shell | Yes | — | — | ConPTY |
+| SSH | Yes | Yes | Yes | Encrypted; host-key verified |
+| Serial | Yes | No | No | Exclusive COM ownership; no remote resize |
+| Telnet | Yes | No | No | **Unencrypted**; per-host warning |
+| RDP / VNC / X11 | No | — | — | Gated until dedicated milestones |
+
+See [`docs/SERIAL_CONSOLE.md`](docs/SERIAL_CONSOLE.md) and [`docs/TELNET_PROTOCOL.md`](docs/TELNET_PROTOCOL.md).
 
 ---
 
@@ -72,6 +85,7 @@ X-Terminal is designed as a MobaXterm-class alternative for Windows operators wh
 |------------|---------|
 | Session library | Folders, favorites, tags, edit/duplicate |
 | Quick Connect | One-shot or saveable SSH connect |
+| Serial / Telnet | New Serial / New Telnet dialogs + command palette |
 | Host keys | Central `known_hosts`, trust prompt, change detection |
 | Auth | Password, private key path, agent (as configured per session) |
 | Jump host | Per-session proxy jump where configured |
@@ -309,6 +323,35 @@ Example profile values for documentation:
 
 ---
 
+## Serial console
+
+Open **New Serial Session** from the toolbar, command palette (`New Serial Session`), or a saved Serial profile.
+
+| Setting | Guidance |
+|---------|----------|
+| COM port | Listed from Windows without opening ports; use **Refresh** |
+| Baud / parity / stop / flow | Validated; invalid values are rejected |
+| Local echo | Off by default (avoid duplicate echo when the device already echoes) |
+| DTR / RTS | Changing lines may reset embedded devices |
+
+Serial sessions use the same xterm.js pipeline (copy, paste, find, zoom, splits, tabs). **SFTP and SSH tunnels are disabled.** Terminal resize changes the local display only — devices do not receive NAWS.
+
+Workspace restore never auto-opens COM ports. Exclusive ownership: one X-Terminal session per COM port.
+
+Troubleshooting: port in use, access denied, missing driver, device unplugged — see [`docs/SERIAL_CONSOLE.md`](docs/SERIAL_CONSOLE.md).
+
+Optional hardware loopback: set `XTERMINAL_SERIAL_PORT_A` / `XTERMINAL_SERIAL_PORT_B` and run `--filter Category=SerialLiveIntegration`. Not required for CI.
+
+## Telnet
+
+Telnet is **not encrypted**. Prefer SSH whenever available. Use Telnet only on authorized legacy gear, labs, or management networks where plaintext is acceptable.
+
+Before connect, X-Terminal shows a warning and records a **per-host** acknowledgment (not credentials). Profiles do not copy SSH usernames/passwords. Reconnect requires an explicit profile preference.
+
+Supported negotiation: ECHO, SUPPRESS-GO-AHEAD, TERMINAL-TYPE, NAWS, BINARY (when offered). Other options are rejected. Details: [`docs/TELNET_PROTOCOL.md`](docs/TELNET_PROTOCOL.md).
+
+Loopback integration tests (`Category=TelnetLoopback`) run against `127.0.0.1` ephemeral listeners — no OS Telnet service is installed.
+
 ## SFTP file management
 
 - Browse, upload, download with a real transfer queue (progress, speed, ETA, cancel, retry)
@@ -458,8 +501,10 @@ Nested options persist when you leave Settings, save, or change fields that call
 - **Secrets:** Passwords and passphrases live only in **Windows Credential Manager** — never in session JSON exports.
 - **Host keys:** Central verification with interactive trust / replace; stored under AppData `known_hosts`.
 - **SSH leases:** Shared connections for shell + forwards without weakening ownership rules.
-- **Private Input:** Blocks application history and broadcast only. It does **not** stop remote echo or host-side logging. See `SECURITY_NOTES.md` and `docs/PRIVACY_AND_HISTORY.md`.
-- **Broadcast:** Confirms multi-line paste and multi-host sends when Security settings require it; never targets Private Input or disconnected panes; clears when the group closes.
+- **Private Input:** Blocks application history and broadcast only. It does **not** encrypt Telnet/Serial traffic or stop remote echo. See `SECURITY_NOTES.md` and `docs/PRIVACY_AND_HISTORY.md`.
+- **Broadcast:** Confirms multi-line paste and multi-host sends when Security settings require it; warns when Serial/Telnet targets are included; never targets Private Input or disconnected panes; clears when the group closes.
+- **Telnet:** Explicit plaintext warning + per-host ack; no SSH credential reuse.
+- **Serial:** Untrusted device bytes; no automatic probing; binary traffic not logged as command history.
 
 ---
 
@@ -518,6 +563,10 @@ Named workspaces, layout restore with opt-in SSH reconnect, shortcut recording w
 
 Isolated AppData profiles, opt-in live test runner, CI filters for private-server tests, validation matrix. Live private-server validation requires the developer secure runner (bounded timeouts; selective `-Filter ShellOsc` / `-Filter PortForward`). See [`docs/PHASE3E_REPORT.md`](docs/PHASE3E_REPORT.md), [`docs/PHASE3E3_REPORT.md`](docs/PHASE3E3_REPORT.md), [`docs/INTEGRATION_TESTING.md`](docs/INTEGRATION_TESTING.md), [`docs/VALIDATION_MATRIX.md`](docs/VALIDATION_MATRIX.md), and [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
 
+### Phase 4A — Serial console and Telnet
+
+Real `SerialSessionHost` and `TelnetSessionHost` with capability gating, COM discovery, Telnet IAC negotiation, plaintext warnings, loopback Telnet tests, optional serial hardware harness. See [`docs/PHASE4A_REPORT.md`](docs/PHASE4A_REPORT.md), [`docs/SERIAL_CONSOLE.md`](docs/SERIAL_CONSOLE.md), and [`docs/TELNET_PROTOCOL.md`](docs/TELNET_PROTOCOL.md).
+
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
 ---
@@ -529,8 +578,8 @@ Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 dotnet restore XTerminal.sln
 dotnet build XTerminal.sln -c Release
 
-# Standard regression (excludes private-server live + interactive ConPTY)
-dotnet test XTerminal.sln -c Release --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive"
+# Standard regression (excludes private-server live, interactive ConPTY, optional serial hardware)
+dotnet test XTerminal.sln -c Release --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive&Category!=SerialLiveIntegration"
 
 # Opt-in live suite (interactive password; existing local config)
 powershell -NoProfile -File tools\run-live-integration.ps1
@@ -550,7 +599,9 @@ CI workflow: [`.github/workflows/ci.yml`](.github/workflows/ci.yml) — Windows 
 
 | Topic | Status |
 |-------|--------|
-| RDP / VNC / Telnet / Serial / X11 | Not implemented (gated stubs) |
+| Serial console | Implemented (Phase 4A); hardware live optional |
+| Telnet | Implemented (Phase 4A); plaintext; loopback-tested |
+| RDP / VNC / X11 | Not implemented (gated stubs) |
 | Per-forward byte counters | Not available from SSH.NET — UI shows **N/A** |
 | Shell integration without hooks | Remains Detecting/Unavailable; terminal still works |
 | SSH agent / Pageant | Default-key fallback only — not a full agent bridge |

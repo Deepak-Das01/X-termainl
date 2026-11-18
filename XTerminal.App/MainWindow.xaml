@@ -143,6 +143,8 @@
           <Button Style="{StaticResource IconBtn}" Content="＋" ToolTip="New terminal" Command="{Binding NewPowerShellCommand}" />
           <Button x:Name="ProfileButton" Style="{StaticResource IconBtn}" Content="▾" ToolTip="Profiles / Quick Connect" Click="ProfileButton_OnClick" />
           <Button Style="{StaticResource IconBtn}" Content="⌁" ToolTip="SSH Quick Connect" Command="{Binding QuickConnectCommand}" />
+          <Button Style="{StaticResource IconBtn}" Content="⛓" ToolTip="New Serial Session" Command="{Binding NewSerialSessionCommand}" />
+          <Button Style="{StaticResource IconBtn}" Content="⚠" ToolTip="New Telnet Session" Command="{Binding NewTelnetSessionCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="✎" ToolTip="New editor tab" Command="{Binding NewUntitledEditorCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="📂" ToolTip="Open file" Command="{Binding OpenLocalFileCommand}" />
           <Button Style="{StaticResource IconBtn}" Content="💾" ToolTip="Save" Command="{Binding SaveEditorCommand}" />

@@ -657,11 +657,17 @@ public partial class MainViewModel : ObservableObject
             MessageBox.Show(
                 session.Kind == SessionKind.Sftp
                     ? "SFTP is available from the SFTP activity in the sidebar. Terminal SFTP tabs are not used."
-                    : $"{label} is not supported in this release. Local shells and SSH remain available.",
+                    : $"{label} is not supported in this release.",
                 "Unsupported protocol",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             return;
+        }
+
+        if (session.Kind == SessionKind.Telnet && startHosts)
+        {
+            if (!EnsureTelnetAcknowledged(session.Host ?? "", session.Port ?? 23))
+                return;
         }
 
         var group = new TerminalGroupTabViewModel(Clone(session), _hostFactory)
@@ -671,10 +677,12 @@ public partial class MainViewModel : ObservableObject
         foreach (var pane in group.AllPanes)
         {
             AttachShellIntegration(pane);
-            if (!startHosts && session.Kind == SessionKind.Ssh)
+            if (!startHosts && session.Kind is SessionKind.Ssh or SessionKind.Telnet or SessionKind.Serial)
             {
                 pane.IsPlaceholder = true;
-                pane.Status = "Restored · disconnected (reconnect to connect)";
+                pane.Status = session.Kind == SessionKind.Serial
+                    ? "Restored · disconnected (serial ports are not auto-opened)"
+                    : "Restored · disconnected (reconnect to connect)";
             }
         }
         group.StatusChanged += UpdateStatus;
@@ -1067,6 +1075,16 @@ public partial class MainViewModel : ObservableObject
                     LocalShell = pane?.Definition.Kind == SessionKind.LocalShell
                         ? pane.Definition.Shell.ToString()
                         : null,
+                    ProtocolKind = pane?.Definition.Kind is SessionKind.Serial or SessionKind.Telnet
+                        ? pane.Definition.Kind.ToString()
+                        : null,
+                    SessionProfileId = pane?.Definition.Kind is SessionKind.Serial or SessionKind.Telnet
+                        ? pane.Definition.Id
+                        : null,
+                    Host = pane?.Definition.Kind == SessionKind.Telnet ? pane.Definition.Host : null,
+                    Port = pane?.Definition.Kind == SessionKind.Telnet ? pane.Definition.Port : null,
+                    SerialPort = pane?.Definition.Kind == SessionKind.Serial ? pane.Definition.SerialPort : null,
+                    BaudRate = pane?.Definition.Kind == SessionKind.Serial ? pane.Definition.BaudRate : null,
                     WorkingDirectory = pane?.Definition.WorkingDirectory,
                     ActivePaneId = pane?.Id,
                     SplitRoot = g.ExportSplitLayout()
@@ -1208,6 +1226,9 @@ public partial class MainViewModel : ObservableObject
                     }
                 }
 
+                if (TryResolveProtocolTab(tab, out var protocolDef) && protocolDef is not null)
+                    return protocolDef;
+
                 if (!string.IsNullOrWhiteSpace(tab.LocalShell) &&
                     Enum.TryParse<ShellKind>(tab.LocalShell, true, out var shell))
                 {
@@ -1234,7 +1255,14 @@ public partial class MainViewModel : ObservableObject
             if (seed.Kind == SessionKind.Ssh && seed.SshSessionId is null)
                 return false; // missing profile — skip
 
-            var start = seed.Kind != SessionKind.Ssh || reconnectRemote;
+            // Serial never auto-opens hardware. Telnet requires opt-in workspace reconnect + profile AutoReconnect.
+            var start = seed.Kind switch
+            {
+                SessionKind.Serial => false,
+                SessionKind.Telnet => reconnectRemote && seed.AutoReconnect == true,
+                SessionKind.Ssh => reconnectRemote,
+                _ => true
+            };
             var group = new TerminalGroupTabViewModel(seed, _hostFactory)
             {
                 SecuritySettings = CurrentSettings.Security,
@@ -1263,6 +1291,9 @@ public partial class MainViewModel : ObservableObject
                     }
                 }
 
+                if (TryResolveProtocolLeaf(leaf, out var leafProtocol) && leafProtocol is not null)
+                    return leafProtocol;
+
                 if (!string.IsNullOrWhiteSpace(leaf.LocalShell) &&
                     Enum.TryParse<ShellKind>(leaf.LocalShell, true, out var shell))
                 {
@@ -1282,10 +1313,12 @@ public partial class MainViewModel : ObservableObject
             foreach (var pane in group.AllPanes)
             {
                 AttachShellIntegration(pane);
-                if (!start && pane.Definition.Kind == SessionKind.Ssh)
+                if (!start && pane.Definition.Kind is SessionKind.Ssh or SessionKind.Telnet or SessionKind.Serial)
                 {
                     pane.IsPlaceholder = true;
-                    pane.Status = "Restored · disconnected";
+                    pane.Status = pane.Definition.Kind == SessionKind.Serial
+                        ? "Restored · disconnected (serial ports are not auto-opened)"
+                        : "Restored · disconnected";
                 }
             }
 
@@ -1315,6 +1348,13 @@ public partial class MainViewModel : ObservableObject
             return true;
         }
 
+        if (TryResolveProtocolTab(tab, out var protocol) && protocol is not null)
+        {
+            var startProtocol = protocol.Kind == SessionKind.Telnet && reconnectRemote && protocol.AutoReconnect == true;
+            await OpenSessionCoreAsync(protocol, startHosts: startProtocol);
+            return true;
+        }
+
         if (!string.IsNullOrWhiteSpace(tab.LocalShell) &&
             Enum.TryParse<ShellKind>(tab.LocalShell, true, out var localShell))
         {
@@ -1326,6 +1366,77 @@ public partial class MainViewModel : ObservableObject
                 Group = "Local",
                 WorkingDirectory = tab.WorkingDirectory
             });
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool TryResolveProtocolTab(Core.Models.Ui.WorkspaceTabLayout tab, out SessionDefinition? definition) =>
+        TryResolveProtocolFields(
+            tab.ProtocolKind, tab.SessionProfileId, tab.Title, tab.Host, tab.Port, tab.SerialPort, tab.BaudRate,
+            out definition);
+
+    private bool TryResolveProtocolLeaf(Core.Models.Ui.SplitLayoutNode leaf, out SessionDefinition? definition) =>
+        TryResolveProtocolFields(
+            leaf.ProtocolKind, leaf.SessionProfileId, leaf.PaneTitle, leaf.Host, leaf.Port, leaf.SerialPort, leaf.BaudRate,
+            out definition);
+
+    private bool TryResolveProtocolFields(
+        string? protocolKind,
+        Guid? sessionProfileId,
+        string? title,
+        string? host,
+        int? port,
+        string? serialPort,
+        int? baudRate,
+        out SessionDefinition? definition)
+    {
+        definition = null;
+        if (string.IsNullOrWhiteSpace(protocolKind) ||
+            !Enum.TryParse<SessionKind>(protocolKind, true, out var kind) ||
+            kind is not (SessionKind.Serial or SessionKind.Telnet))
+            return false;
+
+        if (sessionProfileId is Guid pid)
+        {
+            var match = SessionGroups.SelectMany(g => g.Sessions).FirstOrDefault(s => s.Id == pid);
+            if (match is not null)
+            {
+                definition = ClonePreservingId(match);
+                if (!string.IsNullOrWhiteSpace(title))
+                    definition.Name = title;
+                return true;
+            }
+        }
+
+        if (kind == SessionKind.Serial && !string.IsNullOrWhiteSpace(serialPort))
+        {
+            definition = new SessionDefinition
+            {
+                Id = sessionProfileId ?? Guid.NewGuid(),
+                Name = string.IsNullOrWhiteSpace(title) ? $"Serial · {serialPort}" : title!,
+                Kind = SessionKind.Serial,
+                Group = "Serial",
+                SerialPort = serialPort,
+                BaudRate = baudRate ?? 115200,
+                AutoReconnect = false
+            };
+            return true;
+        }
+
+        if (kind == SessionKind.Telnet && !string.IsNullOrWhiteSpace(host))
+        {
+            definition = new SessionDefinition
+            {
+                Id = sessionProfileId ?? Guid.NewGuid(),
+                Name = string.IsNullOrWhiteSpace(title) ? $"Telnet · {host}" : title!,
+                Kind = SessionKind.Telnet,
+                Group = "Telnet",
+                Host = host,
+                Port = port ?? 23,
+                AutoReconnect = false
+            };
             return true;
         }
 
@@ -2280,6 +2391,8 @@ public partial class MainViewModel : ObservableObject
             new AppCommand { Id = "tab.close", Title = "Close Tab", Category = CommandCategory.Application, Shortcut = "Ctrl+W", Execute = () => _ = CloseTabAsync(SelectedTab), CanExecute = () => SelectedTab is not null },
             new AppCommand { Id = "tab.reopen", Title = "Reopen Closed Tab", Category = CommandCategory.Application, Shortcut = "Ctrl+Shift+T", Execute = () => _ = ReopenClosedTabAsync(), CanExecute = () => RecentlyClosed.Count > 0 },
             new AppCommand { Id = "ssh.quick", Title = "Quick Connect", Category = CommandCategory.Ssh, Execute = () => _ = QuickConnectAsync() },
+            new AppCommand { Id = "serial.new", Title = "New Serial Session", Category = CommandCategory.Sessions, Execute = () => _ = NewSerialSessionAsync() },
+            new AppCommand { Id = "telnet.new", Title = "New Telnet Session", Category = CommandCategory.Sessions, Execute = () => _ = NewTelnetSessionAsync() },
             new AppCommand { Id = "ssh.sessions", Title = "Open Sessions", Category = CommandCategory.Sessions, Execute = () => SelectActivity(Activities.First(a => a.Section == ActivitySection.Sessions)) },
             new AppCommand { Id = "ssh.sftp", Title = "Open SFTP", Category = CommandCategory.Sftp, Execute = () => _ = OpenSftpAsync(null) },
             new AppCommand { Id = "ssh.reconnect", Title = "Reconnect", Category = CommandCategory.Ssh, Execute = () => _ = SelectedTerminalTab?.ReconnectCommand.ExecuteAsync(null), CanExecute = () => SelectedTerminalTab is not null },
@@ -2365,13 +2478,75 @@ public partial class MainViewModel : ObservableObject
             SessionGroups.Add(new SessionGroupViewModel(group.Key, group.OrderBy(s => s.Name)));
         }
 
-        // Persist local shell profile catalog (ssh sessions live in ssh-sessions.json).
-        _ = _sessionStore.SaveAsync(list.Where(s => s.Kind == SessionKind.LocalShell));
+        // Persist local / serial / telnet profile catalog (SSH sessions live in ssh-sessions.json).
+        _ = _sessionStore.SaveAsync(list.Where(s =>
+            s.Kind is SessionKind.LocalShell or SessionKind.Serial or SessionKind.Telnet));
     }
 
     private void FilterGroups(string query)
     {
         foreach (var group in SessionGroups) group.ApplyFilter(query);
+    }
+
+    private bool EnsureTelnetAcknowledged(string host, int port)
+    {
+        var store = new JsonTelnetAcknowledgmentStore();
+        if (store.IsAcknowledged(host, port))
+            return true;
+
+        var result = MessageBox.Show(
+            TelnetSecurityPolicy.WarningBody + "\n\nConnect to this host with Telnet anyway?",
+            TelnetSecurityPolicy.WarningTitle,
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes)
+            return false;
+
+        store.Acknowledge(host, port);
+        return true;
+    }
+
+    [RelayCommand]
+    private async Task NewSerialSessionAsync()
+    {
+        var window = new Views.SerialConnectWindow { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true || window.Result is null) return;
+        await OpenSessionCoreAsync(window.Result);
+        if (window.SaveProfile)
+            await PersistLocalProtocolProfileAsync(window.Result);
+    }
+
+    [RelayCommand]
+    private async Task NewTelnetSessionAsync()
+    {
+        var window = new Views.TelnetConnectWindow { Owner = Application.Current?.MainWindow };
+        if (window.ShowDialog() != true || window.Result is null) return;
+        await OpenSessionCoreAsync(window.Result);
+        if (window.SaveProfile)
+            await PersistLocalProtocolProfileAsync(window.Result);
+    }
+
+    private async Task PersistLocalProtocolProfileAsync(SessionDefinition def)
+    {
+        try
+        {
+            var list = (await _sessionStore.LoadAsync()).ToList();
+            list.RemoveAll(s => s.Id == def.Id);
+            list.Add(ClonePreservingId(def));
+            await _sessionStore.SaveAsync(list);
+            RebuildGroups(list);
+        }
+        catch
+        {
+            // non-fatal
+        }
+    }
+
+    private static SessionDefinition ClonePreservingId(SessionDefinition source)
+    {
+        var c = Clone(source);
+        c.Id = source.Id;
+        return c;
     }
 
     private static SessionDefinition Clone(SessionDefinition source) => new()
@@ -2388,6 +2563,20 @@ public partial class MainViewModel : ObservableObject
         WorkingDirectory = source.WorkingDirectory,
         SerialPort = source.SerialPort,
         BaudRate = source.BaudRate,
+        DataBits = source.DataBits,
+        Parity = source.Parity,
+        StopBits = source.StopBits,
+        FlowControl = source.FlowControl,
+        DtrEnable = source.DtrEnable,
+        RtsEnable = source.RtsEnable,
+        ReadTimeoutMs = source.ReadTimeoutMs,
+        WriteTimeoutMs = source.WriteTimeoutMs,
+        TextEncoding = source.TextEncoding,
+        LineEnding = source.LineEnding,
+        LocalEcho = source.LocalEcho,
+        AutoReconnect = source.AutoReconnect,
+        ConnectionTimeoutSeconds = source.ConnectionTimeoutSeconds,
+        TerminalType = source.TerminalType,
         Extra = new Dictionary<string, string>(source.Extra),
         SshSessionId = source.SshSessionId
     };

@@ -1,31 +1,24 @@
-# Validation matrix (Phase 3E.1)
+# Validation matrix (Phase 4A)
 
 Legend: **Unit** · **Protocol live** · **GUI** · **E2E** · **Not executed** · **Unsupported**
 
 | Area | Unit | Protocol live | GUI | E2E | Notes |
 |------|------|---------------|-----|-----|-------|
-| Local PowerShell ConPTY | Yes | Yes (smoke) | Not executed | Not executed | Connect/dispose smoke |
-| Local CMD | Partial | Not executed | Not executed | Not executed | |
-| Local WSL | Partial | Not executed | Not executed | Not executed | Depends on install |
-| SSH handshake / host key | Yes | Opt-in suite | Not executed | Not executed | Production `SshTransportFactory` |
-| SSH remote command | Yes (gate) | Opt-in suite | Not executed | Not executed | Unique marker |
-| SSH interactive shell | Yes (mocks) | Opt-in suite | Not executed | Not executed | Production `SshSessionHost` |
-| Host-key mismatch reject | Yes | Opt-in suite | N/A | N/A | Isolated known_hosts |
-| SFTP transfers | Yes | Opt-in suite | Not executed | Not executed | Production `SftpSessionService` |
-| Remote Monaco editor | Yes (helpers) | Not executed | Not executed | Not executed | |
-| Shell integration OSC parser | Yes | Opt-in (session-local OSC) | Not executed | Not executed | No remote rc mutation |
-| Terminal↔SFTP CWD sync | Yes | Not executed | Not executed | Not executed | |
-| Port forwarding | Yes (validation) | Opt-in suite | Not executed | Not executed | Loopback-only |
-| Diagnostics | Yes | Opt-in suite | Not executed | Not executed | Sanitized export |
-| Live integration gate | Yes | N/A | N/A | N/A | Process opt-in required |
-| Probe failure classification | Yes | N/A | N/A | N/A | DNS/refused/timeout/network |
-| Workspace restore | Yes | N/A | Not executed | Not executed | |
-| Keybindings | Yes | N/A | Not executed | Not executed | |
-| Broadcast / Private Input | Yes | N/A | Not executed | Not executed | |
-| Unsupported protocols | Gated | Unsupported | N/A | N/A | RDP/VNC/Telnet/Serial/X11 |
+| Local PowerShell ConPTY | Yes | Yes (smoke) | Sanity | Not executed | |
+| SSH / SFTP / shell / forward | Yes | Opt-in 10 tests | Not executed this checkpoint | — | Prior Phase 3E.3: 10/10 |
+| Serial profile validation | Yes | — | Sanity | — | Rejects invalid configs |
+| Serial port discovery | Yes (abstraction) | Optional hardware | Sanity | — | No open-to-probe |
+| SerialSessionHost | Yes (ownership/hex/caps) | Optional `SerialLiveIntegration` | Sanity | — | Excluded from CI filter |
+| Telnet negotiation | Yes | Loopback | Sanity | — | IAC / options / loops |
+| TelnetSessionHost | Yes | `TelnetLoopback` (5) | Sanity | — | Production host |
+| Telnet security policy | Yes | — | Sanity | — | Per-host ack |
+| Capability gating | Yes | — | Sanity | — | No SFTP/tunnels on Serial/Telnet |
+| Workspace restore | Yes (fields) | — | Sanity | — | Serial never auto-open |
+| RDP / VNC / X11 | Gated | Unsupported | N/A | N/A | |
 
-Live private-server rows require a successful interactive run of `tools/run-live-integration.ps1`.
+Standard filtered suite (Phase 4A): **190** passed  
+(`Category!=LiveIntegration&Category!=LocalConPtyInteractive&Category!=SerialLiveIntegration`).
 
-Phase 3E.2 fixed SFTP chmod / OSC await / diagnostic auth-method issues (partial live confirmation).
+SSH/SFTP live suite: **discoverable 10**; not re-executed against this checkpoint unless the developer runs `tools/run-live-integration.ps1`.
 
-Phase 3E.3 fixed SSH dispose / port-forward teardown hangs and Shell OSC harness sequencing. Developer live run: **10/10** passed (`tools/run-live-integration.ps1`).
+Serial hardware live: **not executed** unless `XTERMINAL_SERIAL_PORT_A/B` set.

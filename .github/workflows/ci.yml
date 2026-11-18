@@ -27,7 +27,7 @@ jobs:
 
       - name: Test (Release)
         # Exclude opt-in LiveIntegration tests that require private infrastructure.
-        run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive"
+        run: dotnet test --configuration Release --no-build --verbosity normal --filter "Category!=LiveIntegration&Category!=LocalConPtyInteractive&Category!=SerialLiveIntegration"
 
       # Optional binary artifact — not a GitHub Release. Disabled by default; enable when needed.
       # - name: Upload build

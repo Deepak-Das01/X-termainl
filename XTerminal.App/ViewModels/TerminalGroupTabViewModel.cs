@@ -32,6 +32,7 @@ public partial class TerminalGroupTabViewModel : ObservableObject, IWorkspaceTab
     [ObservableProperty] private BroadcastMode _broadcastMode = BroadcastMode.Off;
     [ObservableProperty] private SplitNode? _maximizedLeaf;
     private bool _multiHostWarned;
+    private bool _protocolBroadcastWarned;
 
     public Guid Id { get; } = Guid.NewGuid();
     public string Glyph { get; private set; } = "❯";
@@ -157,6 +158,7 @@ public partial class TerminalGroupTabViewModel : ObservableObject, IWorkspaceTab
         BroadcastMode = mode;
         BroadcastEnabled = mode != BroadcastMode.Off;
         _multiHostWarned = false;
+        _protocolBroadcastWarned = false;
         if (mode == BroadcastMode.Off)
         {
             foreach (var p in AllPanes)
@@ -262,6 +264,27 @@ public partial class TerminalGroupTabViewModel : ObservableObject, IWorkspaceTab
             _multiHostWarned = true;
         }
 
+        if (!_protocolBroadcastWarned &&
+            targets.Any(t => t.Definition.Kind is SessionKind.Serial or SessionKind.Telnet))
+        {
+            var warn = System.Windows.MessageBox.Show(
+                "Broadcast targets include Serial and/or Telnet sessions.\n\n" +
+                "• Serial: input goes to attached hardware (may reset devices).\n" +
+                "• Telnet: traffic is plaintext and unencrypted.\n\n" +
+                "Continue broadcasting to these sessions?",
+                "Broadcast includes Serial/Telnet",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Warning);
+            if (warn != System.Windows.MessageBoxResult.Yes)
+            {
+                SetBroadcastMode(BroadcastMode.Off);
+                ActivePane?.WriteInput(data);
+                return;
+            }
+
+            _protocolBroadcastWarned = true;
+        }
+
         foreach (var pane in targets)
             pane.WriteInput(data);
     }
@@ -302,7 +325,17 @@ public partial class TerminalGroupTabViewModel : ObservableObject, IWorkspaceTab
                 : null,
             WorkingDirectory = leaf.Session.Definition.WorkingDirectory,
             SshSessionId = leaf.Session.Definition.SshSessionId,
-            PaneSessionId = leaf.Session.Definition.SshSessionId
+            PaneSessionId = leaf.Session.Definition.SshSessionId,
+            ProtocolKind = leaf.Session.Definition.Kind is SessionKind.Serial or SessionKind.Telnet
+                ? leaf.Session.Definition.Kind.ToString()
+                : null,
+            SessionProfileId = leaf.Session.Definition.Kind is SessionKind.Serial or SessionKind.Telnet
+                ? leaf.Session.Definition.Id
+                : null,
+            Host = leaf.Session.Definition.Kind == SessionKind.Telnet ? leaf.Session.Definition.Host : null,
+            Port = leaf.Session.Definition.Kind == SessionKind.Telnet ? leaf.Session.Definition.Port : null,
+            SerialPort = leaf.Session.Definition.Kind == SessionKind.Serial ? leaf.Session.Definition.SerialPort : null,
+            BaudRate = leaf.Session.Definition.Kind == SessionKind.Serial ? leaf.Session.Definition.BaudRate : null
         },
         BranchNode branch => new Core.Models.Ui.SplitLayoutNode
         {
@@ -380,6 +413,23 @@ public partial class TerminalGroupTabViewModel : ObservableObject, IWorkspaceTab
         Shell = s.Shell,
         CustomCommand = s.CustomCommand,
         WorkingDirectory = s.WorkingDirectory,
+        SerialPort = s.SerialPort,
+        BaudRate = s.BaudRate,
+        DataBits = s.DataBits,
+        Parity = s.Parity,
+        StopBits = s.StopBits,
+        FlowControl = s.FlowControl,
+        DtrEnable = s.DtrEnable,
+        RtsEnable = s.RtsEnable,
+        ReadTimeoutMs = s.ReadTimeoutMs,
+        WriteTimeoutMs = s.WriteTimeoutMs,
+        TextEncoding = s.TextEncoding,
+        LineEnding = s.LineEnding,
+        LocalEcho = s.LocalEcho,
+        AutoReconnect = s.AutoReconnect,
+        ConnectionTimeoutSeconds = s.ConnectionTimeoutSeconds,
+        TerminalType = s.TerminalType,
+        Extra = new Dictionary<string, string>(s.Extra),
         SshSessionId = s.SshSessionId
     };
 
