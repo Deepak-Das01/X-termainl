@@ -514,6 +514,10 @@ Optional OSC shell integration, terminal↔SFTP CWD sync, advanced port forwardi
 
 Named workspaces, layout restore with opt-in SSH reconnect, shortcut recording with conflict handling, and context-aware routing. See [`docs/PHASE3D_REPORT.md`](docs/PHASE3D_REPORT.md), [`docs/WORKSPACE_RESTORATION.md`](docs/WORKSPACE_RESTORATION.md), and [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md).
 
+### Phase 3E — Live integration harness and stability
+
+Isolated AppData profiles, opt-in live test runner, CI filters for private-server tests, validation matrix. Live private-server validation requires the developer secure runner. See [`docs/PHASE3E_REPORT.md`](docs/PHASE3E_REPORT.md), [`docs/INTEGRATION_TESTING.md`](docs/INTEGRATION_TESTING.md), [`docs/VALIDATION_MATRIX.md`](docs/VALIDATION_MATRIX.md), and [`docs/KNOWN_LIMITATIONS.md`](docs/KNOWN_LIMITATIONS.md).
+
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 
 ---

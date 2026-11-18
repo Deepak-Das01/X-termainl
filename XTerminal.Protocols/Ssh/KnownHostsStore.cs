@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using XTerminal.Core.Services;
 
 namespace XTerminal.Protocols.Ssh;
 
@@ -11,11 +12,8 @@ public sealed class KnownHostsStore
 
     public KnownHostsStore(string? path = null)
     {
-        var root = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "XTerminal");
-        Directory.CreateDirectory(root);
-        _path = path ?? Path.Combine(root, "known_hosts");
+        _path = path ?? AppStoragePaths.KnownHosts;
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
     }
 
     public string FilePath => _path;

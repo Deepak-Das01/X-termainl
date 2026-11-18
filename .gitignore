@@ -69,3 +69,5 @@ tools/monaco-fetch/node_modules/
 **/integration.local.*
 **/integration*.local.json
 .xterminal/
+**/integration.local.json
+**/xterminal-it-*/

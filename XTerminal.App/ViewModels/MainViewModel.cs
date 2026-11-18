@@ -92,7 +92,7 @@ public partial class MainViewModel : ObservableObject
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString() ?? "1.0.0";
     public string AboutRuntime => $"{Environment.OSVersion} · .NET {Environment.Version}";
     public string AppDataDirectory =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "XTerminal");
+        AppStoragePaths.Root;
 
     [ObservableProperty] private bool _historyEnabled = true;
     [ObservableProperty] private int _historyRetentionDays = 30;
@@ -1621,9 +1621,7 @@ public partial class MainViewModel : ObservableObject
         KnownHosts.Clear();
         try
         {
-            var path = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "XTerminal", "known_hosts");
+            var path = AppStoragePaths.KnownHosts;
             if (!File.Exists(path)) return;
             foreach (var line in File.ReadLines(path))
             {
@@ -1689,9 +1687,7 @@ public partial class MainViewModel : ObservableObject
 
         try
         {
-            var path = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "XTerminal", "known_hosts");
+            var path = AppStoragePaths.KnownHosts;
             if (!File.Exists(path)) return;
             var lines = File.ReadAllLines(path)
                 .Where(l => !l.StartsWith(row.HostPort + " ", StringComparison.OrdinalIgnoreCase))
