@@ -269,6 +269,78 @@ public partial class TerminalGroupTabViewModel : ObservableObject, IWorkspaceTab
     public int PaneIndex => ActivePane is null ? 0 : AllPanes.IndexOf(ActivePane) + 1;
     public int PaneCount => AllPanes.Count;
 
+    public Core.Models.Ui.SplitLayoutNode ExportSplitLayout() => ExportNode(Root);
+
+    /// <summary>
+    /// Rebuild split tree from saved metadata. Does not start hosts — caller decides connect policy.
+    /// </summary>
+    public void RebuildFromSplitLayout(
+        Core.Models.Ui.SplitLayoutNode layout,
+        Func<Core.Models.Ui.SplitLayoutNode, SessionDefinition> definitionFactory)
+    {
+        foreach (var pane in AllPanes.ToList())
+            _ = pane.DisposeAsync();
+        AllPanes.Clear();
+        Root = ImportNode(layout, definitionFactory);
+        ActivePane = FirstLeaf(Root)?.Session;
+        IsMaximized = false;
+        MaximizedLeaf = null;
+        RefreshBroadcast();
+        SyncChrome();
+        LayoutChanged?.Invoke();
+    }
+
+    private static Core.Models.Ui.SplitLayoutNode ExportNode(SplitNode node) => node switch
+    {
+        LeafNode leaf => new Core.Models.Ui.SplitLayoutNode
+        {
+            Type = "leaf",
+            PaneId = leaf.Session.Id,
+            PaneTitle = leaf.Session.Title,
+            LocalShell = leaf.Session.Definition.Kind == SessionKind.LocalShell
+                ? leaf.Session.Definition.Shell.ToString()
+                : null,
+            WorkingDirectory = leaf.Session.Definition.WorkingDirectory,
+            SshSessionId = leaf.Session.Definition.SshSessionId,
+            PaneSessionId = leaf.Session.Definition.SshSessionId
+        },
+        BranchNode branch => new Core.Models.Ui.SplitLayoutNode
+        {
+            Type = "branch",
+            Orientation = branch.Orientation.ToString(),
+            Ratio = branch.Ratio,
+            First = ExportNode(branch.First),
+            Second = ExportNode(branch.Second)
+        },
+        _ => new Core.Models.Ui.SplitLayoutNode { Type = "leaf" }
+    };
+
+    private SplitNode ImportNode(
+        Core.Models.Ui.SplitLayoutNode node,
+        Func<Core.Models.Ui.SplitLayoutNode, SessionDefinition> definitionFactory)
+    {
+        if (string.Equals(node.Type, "branch", StringComparison.OrdinalIgnoreCase) &&
+            node.First is not null && node.Second is not null)
+        {
+            var orientation = string.Equals(node.Orientation, "Horizontal", StringComparison.OrdinalIgnoreCase)
+                ? Orientation.Horizontal
+                : Orientation.Vertical;
+            return new BranchNode
+            {
+                Orientation = orientation,
+                Ratio = Math.Clamp(node.Ratio <= 0 ? 0.5 : node.Ratio, 0.15, 0.85),
+                First = ImportNode(node.First, definitionFactory),
+                Second = ImportNode(node.Second, definitionFactory)
+            };
+        }
+
+        var def = definitionFactory(node);
+        var pane = CreatePane(def);
+        if (!string.IsNullOrWhiteSpace(node.PaneTitle))
+            pane.Title = node.PaneTitle!;
+        return new LeafNode(pane);
+    }
+
     private TerminalTabViewModel CreatePane(SessionDefinition definition)
     {
         var pane = new TerminalTabViewModel(definition, _factory);

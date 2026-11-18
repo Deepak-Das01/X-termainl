@@ -24,7 +24,10 @@ public partial class MainViewModel : ObservableObject
     private readonly SessionHostFactory _hostFactory;
     private readonly RemoteEditorFileService _remoteEditor = new();
     private readonly IWorkspaceLayoutStore _workspaceLayout = new JsonWorkspaceLayoutStore();
+    private readonly IWorkspaceProfileStore _workspaceProfiles = new JsonWorkspaceProfileStore();
+    private CancellationTokenSource? _workspaceSaveCts;
     private bool _suppressPersist;
+    private string? _lastWorkspaceRecoveryNote;
 
     [ObservableProperty] private IWorkspaceTab? _selectedTab;
     [ObservableProperty] private string _searchText = string.Empty;
@@ -642,7 +645,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnHistoryExcludeSshChanged(bool value) { History.ApplySettings(BuildSettings().History); _ = PersistAsync(); }
     partial void OnHistoryExcludePatternsTextChanged(string value) { History.ApplySettings(BuildSettings().History); _ = PersistAsync(); }
 
-    private async Task OpenSessionCoreAsync(SessionDefinition session)
+    private async Task OpenSessionCoreAsync(SessionDefinition session, bool startHosts = true)
     {
         if (!SessionHostFactory.IsTerminalSessionSupported(session.Kind))
         {
@@ -666,14 +669,23 @@ public partial class MainViewModel : ObservableObject
             SecuritySettings = CurrentSettings.Security
         };
         foreach (var pane in group.AllPanes)
+        {
             AttachShellIntegration(pane);
+            if (!startHosts && session.Kind == SessionKind.Ssh)
+            {
+                pane.IsPlaceholder = true;
+                pane.Status = "Restored · disconnected (reconnect to connect)";
+            }
+        }
         group.StatusChanged += UpdateStatus;
+        group.LayoutChanged += () => ScheduleWorkspaceSave();
         InsertTabOrdered(group);
         SelectedTab = group;
-        await group.StartAsync();
+        if (startHosts)
+            await group.StartAsync();
         UpdateStatus();
         NotifyTabSelection();
-        _ = SaveWorkspaceLayoutAsync();
+        ScheduleWorkspaceSave();
     }
 
     private void InsertTabOrdered(IWorkspaceTab tab)
@@ -990,54 +1002,96 @@ public partial class MainViewModel : ObservableObject
         OnPropertyChanged(nameof(ShowReconnect));
     }
 
+    private void ScheduleWorkspaceSave()
+    {
+        if (!CurrentSettings.Advanced.RestoreWorkspaceLayout) return;
+        _workspaceSaveCts?.Cancel();
+        _workspaceSaveCts = new CancellationTokenSource();
+        var token = _workspaceSaveCts.Token;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(400, token);
+                await SaveWorkspaceLayoutAsync();
+            }
+            catch (OperationCanceledException) { /* debounced */ }
+        }, token);
+    }
+
+    public Task FlushWorkspaceLayoutAsync() => SaveWorkspaceLayoutAsync();
+
     private async Task SaveWorkspaceLayoutAsync()
     {
         if (!CurrentSettings.Advanced.RestoreWorkspaceLayout) return;
         try
         {
-            var doc = new Core.Models.Ui.WorkspaceLayoutDocument
-            {
-                RestoreEnabled = CurrentSettings.Advanced.RestoreWorkspaceLayout,
-                AutoReconnectRemote = CurrentSettings.Advanced.AutoReconnectRestoredSessions,
-                ActiveSection = ActiveSection.ToString(),
-                LocalFilesPath = Files.PathText
-            };
-
-            foreach (var tab in Tabs)
-            {
-                if (tab is TerminalGroupTabViewModel g && g.ActivePane is { } pane)
-                {
-                    doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
-                    {
-                        Kind = "terminal",
-                        Title = g.Title,
-                        IsPinned = g.IsPinned,
-                        SshSessionId = pane.Definition.SshSessionId,
-                        LocalShell = pane.Definition.Kind == SessionKind.LocalShell
-                            ? pane.Definition.Shell.ToString()
-                            : null,
-                        WorkingDirectory = pane.Definition.WorkingDirectory
-                    });
-                }
-                else if (tab is EditorTabViewModel ed)
-                {
-                    doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
-                    {
-                        Kind = "editor",
-                        Title = ed.Title,
-                        IsPinned = ed.IsPinned,
-                        EditorPath = ed.LocalPath,
-                        EditorIsRemote = ed.Kind == EditorDocumentKind.RemoteSftp
-                    });
-                }
-            }
-
+            var doc = BuildWorkspaceDocumentFromUi("Previous session");
             await _workspaceLayout.SaveAsync(doc);
         }
         catch
         {
             // never block UX on layout persistence
         }
+    }
+
+    private Core.Models.Ui.WorkspaceLayoutDocument BuildWorkspaceDocumentFromUi(string name)
+    {
+        var doc = new Core.Models.Ui.WorkspaceLayoutDocument
+        {
+            Version = Core.Models.Ui.WorkspaceLayoutDocument.CurrentSchemaVersion,
+            WorkspaceName = name,
+            RestoreEnabled = CurrentSettings.Advanced.RestoreWorkspaceLayout,
+            AutoReconnectRemote = CurrentSettings.Advanced.AutoReconnectRestoredSessions,
+            ActiveSection = ActiveSection.ToString(),
+            LocalFilesPath = Files.PathText,
+            ActivityBarExpanded = IsActivityBarExpanded,
+            UtilityPanelOpen = IsUtilityPanelOpen,
+            ActiveTabId = SelectedTab is TerminalGroupTabViewModel tg ? tg.Id
+                : SelectedTab is EditorTabViewModel et ? et.Id
+                : null
+        };
+
+        foreach (var tab in Tabs)
+        {
+            if (tab is TerminalGroupTabViewModel g)
+            {
+                var pane = g.ActivePane;
+                doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
+                {
+                    TabId = g.Id,
+                    Kind = "terminal",
+                    Title = g.Title,
+                    IsPinned = g.IsPinned,
+                    SshSessionId = pane?.Definition.SshSessionId,
+                    LocalShell = pane?.Definition.Kind == SessionKind.LocalShell
+                        ? pane.Definition.Shell.ToString()
+                        : null,
+                    WorkingDirectory = pane?.Definition.WorkingDirectory,
+                    ActivePaneId = pane?.Id,
+                    SplitRoot = g.ExportSplitLayout()
+                });
+            }
+            else if (tab is EditorTabViewModel ed)
+            {
+                // Paths and session refs only — never unsaved document contents.
+                doc.Tabs.Add(new Core.Models.Ui.WorkspaceTabLayout
+                {
+                    TabId = ed.Id,
+                    Kind = "editor",
+                    Title = ed.Title,
+                    IsPinned = ed.IsPinned,
+                    EditorPath = ed.Kind == EditorDocumentKind.RemoteSftp
+                        ? ed.Remote?.RemotePath
+                        : ed.LocalPath,
+                    EditorIsRemote = ed.Kind == EditorDocumentKind.RemoteSftp,
+                    EditorSshSessionId = ed.Remote?.SessionId,
+                    EditorLanguage = ed.LanguageId
+                });
+            }
+        }
+
+        return doc;
     }
 
     /// <summary>
@@ -1048,58 +1102,234 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
-            var doc = await _workspaceLayout.LoadAsync();
+            var loaded = await _workspaceLayout.LoadAsync();
+            var validated = WorkspaceLayoutValidator.ValidateAndNormalize(loaded);
+            if (!validated.IsValid || validated.Document is null)
+            {
+                _lastWorkspaceRecoveryNote = validated.Error ?? "Workspace layout invalid; starting clean.";
+                return false;
+            }
+
+            var doc = validated.Document;
             if (!doc.RestoreEnabled || doc.Tabs.Count == 0)
                 return false;
 
+            if (validated.UsedFallback)
+                _lastWorkspaceRecoveryNote = "Recovered workspace from last valid backup.";
+
             var opened = 0;
-            foreach (var tab in doc.Tabs.Take(12))
+            TerminalGroupTabViewModel? preferred = null;
+
+            foreach (var tab in doc.Tabs)
             {
-                if (tab.Kind == "editor" && !string.IsNullOrWhiteSpace(tab.EditorPath) && !tab.EditorIsRemote &&
-                    File.Exists(tab.EditorPath))
+                try
                 {
-                    await OpenLocalPathAsync(tab.EditorPath);
-                    opened++;
-                    continue;
+                    if (tab.Kind == "editor")
+                    {
+                        if (tab.EditorIsRemote)
+                        {
+                            // Remote editors require an active matching SFTP session — skip silently if unavailable.
+                            continue;
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(tab.EditorPath) && File.Exists(tab.EditorPath))
+                        {
+                            await OpenLocalPathAsync(tab.EditorPath);
+                            opened++;
+                        }
+
+                        continue;
+                    }
+
+                    if (tab.Kind != "terminal") continue;
+
+                    var reconnect = settings.Advanced.AutoReconnectRestoredSessions && doc.AutoReconnectRemote;
+                    if (await RestoreTerminalTabAsync(tab, reconnect))
+                    {
+                        opened++;
+                        if (doc.ActiveTabId == tab.TabId && SelectedTab is TerminalGroupTabViewModel g)
+                            preferred = g;
+                    }
                 }
+                catch
+                {
+                    // Isolate failures — continue restoring remaining tabs.
+                }
+            }
 
-                if (tab.Kind != "terminal") continue;
+            if (preferred is not null)
+                SelectedTab = preferred;
 
-                if (tab.SshSessionId is Guid sid && settings.Advanced.AutoReconnectRestoredSessions)
+            if (!string.IsNullOrWhiteSpace(doc.LocalFilesPath) && Directory.Exists(doc.LocalFilesPath))
+                await Files.NavigateToPathAsync(doc.LocalFilesPath);
+
+            IsActivityBarExpanded = doc.ActivityBarExpanded;
+            IsUtilityPanelOpen = doc.UtilityPanelOpen;
+
+            if (!string.IsNullOrWhiteSpace(doc.ActiveSection) &&
+                Enum.TryParse<ActivitySection>(doc.ActiveSection, true, out var section) &&
+                section != ActivitySection.Settings)
+            {
+                var activity = Activities.FirstOrDefault(a => a.Section == section);
+                if (activity is not null) SelectActivity(activity);
+            }
+
+            return opened > 0;
+        }
+        catch
+        {
+            _lastWorkspaceRecoveryNote = "Workspace restoration failed; falling back to default startup.";
+            return false;
+        }
+    }
+
+    private async Task<bool> RestoreTerminalTabAsync(Core.Models.Ui.WorkspaceTabLayout tab, bool reconnectRemote)
+    {
+        // Prefer full split tree when present.
+        if (tab.SplitRoot is not null)
+        {
+            SessionDefinition SeedDefinition()
+            {
+                if (tab.SshSessionId is Guid sid)
                 {
                     var record = Sessions.FindSession(sid);
                     if (record is not null)
                     {
-                        await ConnectSshAsync(record);
-                        opened++;
-                        continue;
+                        return new SessionDefinition
+                        {
+                            Name = string.IsNullOrWhiteSpace(tab.Title) ? record.Name : tab.Title,
+                            Kind = SessionKind.Ssh,
+                            Host = record.Host,
+                            Port = record.Port,
+                            Username = record.Username,
+                            Group = "SSH",
+                            SshSessionId = record.Id
+                        };
                     }
                 }
 
                 if (!string.IsNullOrWhiteSpace(tab.LocalShell) &&
                     Enum.TryParse<ShellKind>(tab.LocalShell, true, out var shell))
                 {
-                    await OpenSessionCoreAsync(new SessionDefinition
+                    return new SessionDefinition
                     {
                         Name = string.IsNullOrWhiteSpace(tab.Title) ? shell.ToString() : tab.Title,
                         Kind = SessionKind.LocalShell,
                         Shell = shell,
                         Group = "Local",
                         WorkingDirectory = tab.WorkingDirectory
-                    });
-                    opened++;
+                    };
+                }
+
+                return new SessionDefinition
+                {
+                    Name = string.IsNullOrWhiteSpace(tab.Title) ? "Terminal" : tab.Title,
+                    Kind = SessionKind.LocalShell,
+                    Shell = ShellKind.PowerShell,
+                    Group = "Local"
+                };
+            }
+
+            var seed = SeedDefinition();
+            if (seed.Kind == SessionKind.Ssh && seed.SshSessionId is null)
+                return false; // missing profile — skip
+
+            var start = seed.Kind != SessionKind.Ssh || reconnectRemote;
+            var group = new TerminalGroupTabViewModel(seed, _hostFactory)
+            {
+                SecuritySettings = CurrentSettings.Security,
+                IsPinned = tab.IsPinned
+            };
+            if (!string.IsNullOrWhiteSpace(tab.Title))
+                group.Title = tab.Title;
+
+            group.RebuildFromSplitLayout(tab.SplitRoot, leaf =>
+            {
+                if (leaf.SshSessionId is Guid leafSid)
+                {
+                    var record = Sessions.FindSession(leafSid);
+                    if (record is not null)
+                    {
+                        return new SessionDefinition
+                        {
+                            Name = string.IsNullOrWhiteSpace(leaf.PaneTitle) ? record.Name : leaf.PaneTitle,
+                            Kind = SessionKind.Ssh,
+                            Host = record.Host,
+                            Port = record.Port,
+                            Username = record.Username,
+                            Group = "SSH",
+                            SshSessionId = record.Id
+                        };
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(leaf.LocalShell) &&
+                    Enum.TryParse<ShellKind>(leaf.LocalShell, true, out var shell))
+                {
+                    return new SessionDefinition
+                    {
+                        Name = string.IsNullOrWhiteSpace(leaf.PaneTitle) ? shell.ToString() : leaf.PaneTitle!,
+                        Kind = SessionKind.LocalShell,
+                        Shell = shell,
+                        Group = "Local",
+                        WorkingDirectory = leaf.WorkingDirectory
+                    };
+                }
+
+                return Clone(seed);
+            });
+
+            foreach (var pane in group.AllPanes)
+            {
+                AttachShellIntegration(pane);
+                if (!start && pane.Definition.Kind == SessionKind.Ssh)
+                {
+                    pane.IsPlaceholder = true;
+                    pane.Status = "Restored · disconnected";
                 }
             }
 
-            if (!string.IsNullOrWhiteSpace(doc.LocalFilesPath) && Directory.Exists(doc.LocalFilesPath))
-                await Files.NavigateToPathAsync(doc.LocalFilesPath);
+            group.StatusChanged += UpdateStatus;
+            group.LayoutChanged += () => ScheduleWorkspaceSave();
+            InsertTabOrdered(group);
+            SelectedTab = group;
+            if (start)
+                await group.StartAsync();
+            return true;
+        }
 
-            return opened > 0;
-        }
-        catch
+        if (tab.SshSessionId is Guid sid)
         {
-            return false;
+            var record = Sessions.FindSession(sid);
+            if (record is null) return false;
+            await OpenSessionCoreAsync(new SessionDefinition
+            {
+                Name = string.IsNullOrWhiteSpace(tab.Title) ? record.Name : tab.Title,
+                Kind = SessionKind.Ssh,
+                Host = record.Host,
+                Port = record.Port,
+                Username = record.Username,
+                Group = "SSH",
+                SshSessionId = record.Id
+            }, startHosts: reconnectRemote);
+            return true;
         }
+
+        if (!string.IsNullOrWhiteSpace(tab.LocalShell) &&
+            Enum.TryParse<ShellKind>(tab.LocalShell, true, out var localShell))
+        {
+            await OpenSessionCoreAsync(new SessionDefinition
+            {
+                Name = string.IsNullOrWhiteSpace(tab.Title) ? localShell.ToString() : tab.Title,
+                Kind = SessionKind.LocalShell,
+                Shell = localShell,
+                Group = "Local",
+                WorkingDirectory = tab.WorkingDirectory
+            });
+            return true;
+        }
+
+        return false;
     }
 
     private void ApplySettingsToUi(AppSettings settings)
@@ -1264,6 +1494,7 @@ public partial class MainViewModel : ObservableObject
                 Title = cmd.Title,
                 Category = cmd.Category.ToString(),
                 Gesture = Keybindings.GetGesture(cmd.Id),
+                DefaultGesture = Keybindings.GetDefaultGesture(cmd.Id),
                 ConflictWith = other ?? ""
             });
         }
@@ -1325,19 +1556,46 @@ public partial class MainViewModel : ObservableObject
             or System.Windows.Input.Key.LWin or System.Windows.Input.Key.RWin)
             return true;
 
+        if (KeybindingService.IsModifierOnly(key))
+            return true;
+
         var gesture = KeybindingService.ToGesture(key, modifiers);
-        if (gesture is "Ctrl+Shift+P" or "Alt+F4" or "Ctrl+Alt+Delete")
+        if (string.IsNullOrWhiteSpace(gesture))
+            return true;
+
+        if (Keybindings.IsReserved(gesture))
         {
             KeybindingRecordHint = $"“{gesture}” is reserved and cannot be assigned.";
             return true;
         }
 
-        Keybindings.SetGesture(SelectedKeybinding.CommandId, gesture);
+        if (!Keybindings.TrySetGesture(SelectedKeybinding.CommandId, gesture, allowReplaceConflict: false, out var conflictError))
+        {
+            var replace = MessageBox.Show(
+                $"{conflictError}\n\nReassign “{gesture}” to “{SelectedKeybinding.Title}” and clear the previous binding?",
+                "Shortcut conflict",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (replace != MessageBoxResult.Yes)
+            {
+                KeybindingRecordHint = "Recording cancelled — conflict not applied.";
+                IsRecordingKeybinding = false;
+                return true;
+            }
+
+            if (!Keybindings.TrySetGesture(SelectedKeybinding.CommandId, gesture, allowReplaceConflict: true, out var err2))
+            {
+                KeybindingRecordHint = err2 ?? "Could not assign shortcut.";
+                return true;
+            }
+        }
+
         SelectedKeybinding.Gesture = gesture;
         IsRecordingKeybinding = false;
         KeybindingRecordHint = $"Assigned {gesture} to {SelectedKeybinding.Title}.";
         RefreshKeybindingRows();
         SelectedKeybinding = FilteredKeybindingRows.FirstOrDefault(r => r.CommandId == SelectedKeybinding.CommandId);
+        SyncCommandShortcuts();
         _ = PersistAsync();
         return true;
     }
@@ -1461,9 +1719,146 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private void ResetAllKeybindings()
     {
+        var confirm = MessageBox.Show(
+            "Restore all keyboard shortcuts to their defaults?",
+            "Restore defaults",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+        if (confirm != MessageBoxResult.Yes) return;
         Keybindings?.ResetAll();
         RefreshKeybindingRows();
+        SyncCommandShortcuts();
         _ = PersistAsync();
+    }
+
+    private void SaveNamedWorkspace()
+    {
+        var name = PromptText("Save workspace", "Workspace name:", "My workspace");
+        if (string.IsNullOrWhiteSpace(name)) return;
+        try
+        {
+            var doc = BuildWorkspaceDocumentFromUi(name.Trim());
+            var entry = new Core.Models.Ui.WorkspaceProfileEntry { Name = name.Trim() };
+            _ = _workspaceProfiles.SaveProfileAsync(entry, doc).ContinueWith(t =>
+            {
+                Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    if (t.IsFaulted)
+                        MessageBox.Show(t.Exception?.GetBaseException().Message ?? "Save failed", "Save workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    else
+                        MessageBox.Show($"Saved workspace “{name.Trim()}”.", "Workspace", MessageBoxButton.OK, MessageBoxImage.Information);
+                });
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, "Save workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async Task OpenNamedWorkspaceAsync()
+    {
+        var catalog = await _workspaceProfiles.LoadCatalogAsync();
+        if (catalog.Profiles.Count == 0)
+        {
+            MessageBox.Show("No named workspaces saved yet.", "Open workspace", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var dirtyEditors = Tabs.OfType<EditorTabViewModel>().Any(e => e.IsDirty);
+        var active = Tabs.OfType<TerminalGroupTabViewModel>()
+            .SelectMany(g => g.AllPanes)
+            .Any(p => p.ConnectionState is ConnectionState.Connected or ConnectionState.Connecting);
+        if (dirtyEditors || active)
+        {
+            var warn = MessageBox.Show(
+                "Opening a workspace replaces the current layout.\n\n" +
+                (dirtyEditors ? "• Unsaved editor changes may be lost if you continue without saving.\n" : "") +
+                (active ? "• Active terminal sessions will be closed.\n" : "") +
+                "\nContinue?",
+                "Replace workspace",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (warn != MessageBoxResult.Yes) return;
+        }
+
+        var names = string.Join(Environment.NewLine, catalog.Profiles.Select(p => $"• {p.Name}"));
+        var pick = PromptText(
+            "Open workspace",
+            $"Enter the exact workspace name to open:\n\n{names}",
+            catalog.Profiles[0].Name);
+        if (string.IsNullOrWhiteSpace(pick)) return;
+        var entry = catalog.Profiles.FirstOrDefault(p => p.Name.Equals(pick.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (entry is null)
+        {
+            MessageBox.Show("Workspace not found.", "Open workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var doc = await _workspaceProfiles.LoadProfileAsync(entry.Id);
+        if (doc is null)
+        {
+            MessageBox.Show("Workspace file missing or corrupt.", "Open workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        foreach (var tab in Tabs.ToList())
+            await CloseTabAsync(tab);
+
+        await _workspaceLayout.SaveAsync(doc);
+        var restored = await TryRestoreWorkspaceAsync(CurrentSettings);
+        if (!restored)
+            MessageBox.Show("Workspace opened but no tabs could be restored.", "Open workspace", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private async Task RestorePreviousWorkspaceAsync()
+    {
+        var restored = await TryRestoreWorkspaceAsync(CurrentSettings);
+        MessageBox.Show(
+            restored
+                ? "Previous workspace layout restored (new shell processes; SSH only if reconnect is enabled)."
+                : (_lastWorkspaceRecoveryNote ?? "No previous workspace layout was available."),
+            "Restore workspace",
+            MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
+
+    private static string? PromptText(string title, string prompt, string defaultValue)
+    {
+        var win = new Window
+        {
+            Title = title,
+            Width = 420,
+            Height = 240,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner,
+            Owner = Application.Current?.MainWindow,
+            ResizeMode = ResizeMode.NoResize
+        };
+        var panel = new StackPanel { Margin = new Thickness(16) };
+        panel.Children.Add(new TextBlock
+        {
+            Text = prompt,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 0, 0, 8)
+        });
+        var box = new TextBox { Text = defaultValue, Padding = new Thickness(6, 4, 6, 4) };
+        panel.Children.Add(box);
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 12, 0, 0)
+        };
+        string? result = null;
+        var ok = new Button { Content = "OK", Width = 80, Margin = new Thickness(0, 0, 8, 0), IsDefault = true };
+        var cancel = new Button { Content = "Cancel", Width = 80, IsCancel = true };
+        ok.Click += (_, _) => { result = box.Text; win.DialogResult = true; };
+        cancel.Click += (_, _) => { win.DialogResult = false; };
+        buttons.Children.Add(ok);
+        buttons.Children.Add(cancel);
+        panel.Children.Add(buttons);
+        win.Content = panel;
+        return win.ShowDialog() == true ? result : null;
     }
 
     private async Task PersistAsync()
@@ -1898,6 +2293,10 @@ public partial class MainViewModel : ObservableObject
             new AppCommand { Id = "editor.open", Title = "Open File", Category = CommandCategory.Editor, Shortcut = "Ctrl+O", Execute = () => _ = OpenLocalFileAsync() },
             new AppCommand { Id = "editor.save", Title = "Save", Category = CommandCategory.Editor, Shortcut = "Ctrl+S", Execute = () => _ = SaveEditorAsync() },
             new AppCommand { Id = "editor.saveAs", Title = "Save As", Category = CommandCategory.Editor, Shortcut = "Ctrl+Shift+S", Execute = () => _ = SaveEditorAsAsync() },
+            new AppCommand { Id = "workspace.save", Title = "Save Workspace", Category = CommandCategory.Application, Execute = SaveNamedWorkspace },
+            new AppCommand { Id = "workspace.open", Title = "Open Workspace", Category = CommandCategory.Application, Execute = () => _ = OpenNamedWorkspaceAsync() },
+            new AppCommand { Id = "workspace.restore", Title = "Restore Previous Workspace", Category = CommandCategory.Application, Execute = () => _ = RestorePreviousWorkspaceAsync() },
+            new AppCommand { Id = "workspace.manage", Title = "Manage Workspaces", Category = CommandCategory.Application, Execute = () => { OpenSettings(); SettingsCategory = "Advanced"; } },
             new AppCommand { Id = "shell.integrationStatus", Title = "Show Shell Integration Status", Category = CommandCategory.Terminal, Execute = ShowShellIntegrationStatus, CanExecute = () => SelectedTerminalTab is not null },
             new AppCommand { Id = "shell.showCwd", Title = "Show Current Working Directory", Category = CommandCategory.Terminal, Execute = ShowCurrentWorkingDirectory, CanExecute = () => SelectedTerminalTab is not null },
             new AppCommand { Id = "shell.copyBashHooks", Title = "Copy Bash Shell Integration Snippet", Category = CommandCategory.Terminal, Execute = () => CopyShellHookSnippet("bash") },
@@ -2003,6 +2402,7 @@ public sealed class KeybindingRow : ObservableObject
     public string CommandId { get; set; } = "";
     public string Title { get; set; } = "";
     public string Category { get; set; } = "";
+    public string DefaultGesture { get; set; } = "";
     private string _gesture = "";
     public string Gesture
     {

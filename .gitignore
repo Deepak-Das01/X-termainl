@@ -63,6 +63,9 @@ tools/monaco-fetch/node_modules/
 **/transfers/
 **/tmp-transfers/
 
-## Local test servers (may contain secrets)
+## Local test servers / integration (may contain secrets)
 **/test-server*.local.*
 **/local-ssh*.conf
+**/integration.local.*
+**/integration*.local.json
+.xterminal/

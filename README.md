@@ -27,9 +27,11 @@ Built with **.NET 8**, **WPF (MVVM)**, **WebView2** (xterm.js + Monaco), **ConPT
 15. [Security and privacy](#security-model)
 16. [Troubleshooting](#troubleshooting)
 17. [Known limitations](#limitations-and-roadmap)
-18. [Build from source](#build-test-and-ci)
-19. [Development progress](#development-progress)
-20. [Contributing / License](#license-and-acknowledgements)
+18. [Workspaces and startup](#workspaces-and-startup)
+19. [Keyboard shortcuts](#keyboard-shortcuts-guide)
+20. [Build from source](#build-test-and-ci)
+21. [Development progress](#development-progress)
+22. [Contributing / License](#license-and-acknowledgements)
 
 ---
 
@@ -361,6 +363,25 @@ Details: [`docs/PORT_FORWARDING.md`](docs/PORT_FORWARDING.md).
 
 ---
 
+## Workspaces and startup
+
+- **Save Workspace** / **Open Workspace** from the command palette (named profiles under `%AppData%\XTerminal\workspaces\`)
+- **Restore previous workspace** rebuilds tabs and splits from metadata — not prior process state
+- Settings → Advanced:
+  - Restore workspace layout on startup
+  - Auto-reconnect restored SSH sessions (explicit opt-in; host-key policy unchanged)
+- Missing SSH profiles are skipped; other tabs still restore
+- Unsaved editor buffers are not persisted by default
+
+Details: [`docs/WORKSPACE_RESTORATION.md`](docs/WORKSPACE_RESTORATION.md).
+
+## Keyboard shortcuts guide
+
+- Settings → Keybindings: search, record, clear, reset, restore defaults
+- Conflicts require confirmation before reassignment
+- Context-aware routing keeps Files/Editor typing from being stolen by terminal chords
+- Details: [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md)
+
 ## Connection diagnostics
 
 From Sessions → Diagnose (or palette **Show Connection Diagnostics**):
@@ -489,9 +510,9 @@ Transfer queue, conflict policies, permissions, remote editor, drag-and-drop. Se
 
 Optional OSC shell integration, terminal↔SFTP CWD sync, advanced port forwarding, connection diagnostics UI. See [`docs/PHASE3C_REPORT.md`](docs/PHASE3C_REPORT.md) and [`docs/SHELL_INTEGRATION.md`](docs/SHELL_INTEGRATION.md).
 
-### Phase 3D (planned)
+### Phase 3D — Workspace restoration and keybindings
 
-Workspace layout restore and keybinding recording UX (work in progress — not claimed complete).
+Named workspaces, layout restore with opt-in SSH reconnect, shortcut recording with conflict handling, and context-aware routing. See [`docs/PHASE3D_REPORT.md`](docs/PHASE3D_REPORT.md), [`docs/WORKSPACE_RESTORATION.md`](docs/WORKSPACE_RESTORATION.md), and [`docs/KEYBINDINGS.md`](docs/KEYBINDINGS.md).
 
 Detailed Phase 2 notes: [`docs/PHASE2_REPORT.md`](docs/PHASE2_REPORT.md).
 

@@ -22,4 +22,6 @@ public static class AppStoragePaths
     public static string History => Path.Combine(Root, "history.json");
     public static string PortForwards => Path.Combine(Root, "port-forwards.json");
     public static string UiState => Path.Combine(Root, "ui-state.json");
+    public static string WorkspaceLayout => Path.Combine(Root, "workspace-layout.json");
+    public static string WorkspacesDirectory => Path.Combine(Root, "workspaces");
 }

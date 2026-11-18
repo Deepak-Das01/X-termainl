@@ -450,7 +450,8 @@
             <DataGrid.Columns>
               <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="100" IsReadOnly="True" />
               <DataGridTextColumn Header="Command" Binding="{Binding Title}" Width="*" IsReadOnly="True" />
-              <DataGridTextColumn Header="Shortcut" Binding="{Binding Gesture}" Width="140" IsReadOnly="True" />
+              <DataGridTextColumn Header="Shortcut" Binding="{Binding Gesture}" Width="120" IsReadOnly="True" />
+              <DataGridTextColumn Header="Default" Binding="{Binding DefaultGesture}" Width="110" IsReadOnly="True" />
               <DataGridTextColumn Header="Conflict" Binding="{Binding ConflictWith}" Width="120" IsReadOnly="True" />
             </DataGrid.Columns>
           </DataGrid>
@@ -533,7 +534,9 @@
                     IsChecked="{Binding CurrentSettings.Advanced.AutoReconnectRestoredSessions}"
                     Foreground="{DynamicResource BrushTextPrimary}"
                     Checked="SettingsField_OnChanged" Unchecked="SettingsField_OnChanged" />
-          <TextBlock Text="Workspace restore never persists terminal buffers or re-runs prior commands."
+          <TextBlock Text="Workspace restore never persists terminal buffers, passwords, or re-runs prior commands. Named workspaces are available from the command palette (Save/Open Workspace)."
+                     FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" TextWrapping="Wrap" />
+          <TextBlock Text="Use command palette: Save Workspace · Open Workspace · Restore Previous Workspace. Disable layout restore above to start empty/default shell only."
                      FontSize="11" Foreground="{DynamicResource BrushTextMuted}" Margin="0,0,0,12" TextWrapping="Wrap" />
           <TextBlock Text="Application data directory" FontSize="12" FontWeight="SemiBold" Margin="0,0,0,6" />
           <TextBlock Text="{Binding AppDataDirectory}" FontSize="11" FontFamily="Consolas" TextWrapping="Wrap"

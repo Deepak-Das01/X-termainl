@@ -113,6 +113,10 @@ public partial class MainWindow : Window
 
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        // Persist workspace metadata before exit (non-blocking best-effort on cancel path).
+        try { _ = _viewModel.FlushWorkspaceLayoutAsync(); }
+        catch { /* ignore */ }
+
         if (!_viewModel.CurrentSettings.General.ConfirmExitWithActiveSessions)
             return;
 
@@ -316,6 +320,16 @@ public partial class MainWindow : Window
             _viewModel.Commands.Commands.FirstOrDefault(c => c.Id == commandId) is { } matched &&
             (matched.CanExecute?.Invoke() ?? true))
         {
+            var ctx = XTerminal.App.Services.ShortcutContextResolver.Resolve(
+                settingsOpen: _viewModel.ActiveSection == ActivitySection.Settings,
+                activitySection: _viewModel.ActiveSection.ToString(),
+                editorFocused: _viewModel.SelectedTab is EditorTabViewModel,
+                terminalFocused: _viewModel.SelectedTerminalTab is not null &&
+                                 _viewModel.ActiveSection == ActivitySection.Terminal,
+                textInputFocused: Keyboard.FocusedElement is System.Windows.Controls.TextBox or System.Windows.Controls.PasswordBox);
+            if (!XTerminal.App.Services.ShortcutContextResolver.AllowsCommand(ctx, commandId))
+                return;
+
             matched.Execute();
             _viewModel.Commands.MarkUsed(commandId);
             e.Handled = true;
